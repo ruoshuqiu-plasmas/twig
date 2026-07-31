@@ -9,17 +9,18 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：Swift 骨架已落地（任务 07 完成，2026-07-31）。** 仓库含产品/流程文档、执行台账（TODO.md）、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程骨架（Package.swift + App/Features/Core/Shared 四层占位模块，acp-swift-sdk PoC 已通过）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 08（M1-008）：子进程 Supervisor（§5.5 状态机，有限重启+退避）。
+**当前状态：B-M1 核心链路已落地（任务 11 完成，2026-07-31）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层，Supervisor/ACP adapter/SessionStore/GRDB 持久化均已实现，46 测试全绿）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 12（M1-012）：主对话状态机与流式 UI（§5.7）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
 ## 2. 仓库布局
 
 ```
-TODO.md                          线性执行台账：50 个任务 + G0~G4/RC 门槛 + DEC 决策点，逐项勾选
+TODO.md                          线性执行清单：50 个任务 + G0~G4/RC 门槛 + DEC 决策点，逐项勾选（唯一执行面）
 doc/
   分支对话面板-开发文档.md        产品定位、需求、技术选型、数据模型（v1.0 定稿，"已确认"决策不得擅改）
-  分支对话面板-开发流程.md        执行版流程：DoR/DoD、状态机、各阶段交付物、测试矩阵、RC 检查清单
+  分支对话面板-开发流程.md        设计规格（v1.1 起流程仪式降为参考，见文首说明；§5~§8 技术设计与测试矩阵仍有效）
+  工程笔记.md                     排坑与可复用知识（swift-testing/GRDB/SDK 等实测坑，追加式）
 adr/
   ADR-001-acp-client-path.md     已定稿：采用 rebornix/acp-swift-sdk；含锁定版本基线、PoC 结论与回退触发条件
 Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标：App/Features/Core/Shared/SchemaPoC）
@@ -106,14 +107,13 @@ swift package resolve       # 解析/更新依赖
 - `usage` 字段为 null，协议内暂无法查询额度（DEC-11）。
 - 待验证清单共 7 项（allow_always 行为、多 session 事件交错、cancel 时序等），见 `spike/g0-findings.md` §8。
 
-## 6. 工作流约定（来自 TODO.md 与流程文档，执行时必须遵守）
+## 6. 工作流约定（2026-07-31 精简版，取代原 Ready/Done 仪式）
 
-- **台账驱动**：任务以 TODO.md 为唯一执行台账；状态 `[ ]`/`[~]`/`[x]`/`[!]`；每完成一项**立即**更新勾选与「▶ 当前进度」指针，并在附录 C 追加进度日志。
-- **Ready**：关联阶段、输入/输出/不做事项、依赖、≥1 条可执行验收条件齐备才开工。
-- **Done**：测试通过、错误/空状态已处理、日志不记敏感内容、文档已同步、验收可重复。
-- **决策点（DEC-01~11）**：到达前必须显式关闭，产出 ADR（`adr/` 目录）或实现说明；DEC-01/03/04 已关闭。
-- **Gate 制**：G0（已过）→ G1（B-M1 主对话）→ G2（B-M2 只读安全）→ G3（B-M3 支线）→ G4（B-M4 树/多线程/恢复）→ RC。阶段不得只按"代码写完"判断完成。
-- **分支与提交**：短分支 `spike/xxx`、`feat/bmN-xxx`、`fix/xxx`；提交信息用 Conventional Commits 风格英文，如 `feat(acp): establish session and stream text deltas`。每个合并请求只解决一个 Story 或一组强相关 Task。**分支的创建、提交、合并回 `main` 与推送由代理代为管理**（用户 2026-07-31 授权，无需逐次确认）。
+- **清单驱动**：TODO.md 是唯一执行面；状态 `[ ]`/`[~]`/`[x]`/`[!]`。开工前明确该任务的验收条件；完成 = 测试绿 + 勾选更新 + 一行备注 + 更新「▶ 当前进度」指针。
+- **知识沉淀**：排坑与可复用知识记 `doc/工程笔记.md`；协议事实记 `spike/g0-findings.md`；不往 TODO.md 写长文。
+- **决策点（DEC-01~11）**：仅硬决策（架构/数据模型/额度相关）须显式关闭并产出 ADR（`adr/` 目录）或实现说明；琐碎决策直接在 TODO 任务备注记录（DEC-09/10 已标注免 ADR）。DEC-01/03/04 已关闭。
+- **Gate 制**：G0（已过）→ G1（B-M1 主对话）→ G2（B-M2 只读安全）→ G3（B-M3 支线）→ G4（B-M4 树/多线程/恢复）→ RC，验收矩阵见 TODO.md 各 Gate 节。阶段不得只按"代码写完"判断完成。
+- **分支与提交**：短分支 `spike/xxx`、`feat/bmN-xxx`、`fix/xxx`；提交信息用 Conventional Commits 风格英文，如 `feat(acp): establish session and stream text deltas`。**分支的创建、提交、合并回 `main` 与推送由代理代为管理**（用户 2026-07-31 授权，无需逐次确认）。
 
 ## 7. 代码规范（Swift 工程落地后适用）
 
@@ -129,16 +129,14 @@ swift package resolve       # 解析/更新依赖
 
 ## 8. 测试策略
 
-四层测试体系（流程文档 §10）：
+**测试工程约定**：凡派生真实子进程的测试套件必须标 `@Suite(.serialized)`（swift-testing 并发 spawn 会 dyld 假死，详见 `doc/工程笔记.md`）；等待子进程退出必须全程挂起且返回前确保已退出。
 
-**测试工程约定（2026-07-31 实测排坑）**：凡派生真实子进程的测试套件必须标 `@Suite(.serialized)`——swift-testing 高度并发 spawn 时，子进程会卡在 dyld 启动通知阶段假死（`dyld4::RemoteNotificationResponder::blockOnSynchronousEvent`，与业务代码无关）；等待子进程退出必须全程挂起且返回前确保已退出（Process 运行中 dealloc 会抛 NSException）。
-
-1. **单元测试**：PermissionPolicyEngine、BranchContextAssembler、BranchMergeService、ACP event adapter、session 路由、树构建（含孤儿/环检测）、锚点定位、migration、消息状态机。
+1. **单元测试**（swift-testing）：PermissionPolicyEngine、BranchContextAssembler、BranchMergeService、ACP event adapter、session 路由、树构建（含孤儿/环检测）、锚点定位、migration、消息状态机。
 2. **ACP 测试替身**：以 `spike/samples/sanitized/` 的脱敏样本为 fixtures 建立 fake ACP process，可脚本化流式、工具事件、各类 permission、malformed message、子进程中途退出、多 session 交错等。替身用于稳定回归，**不能替代真实 CLI 验证**。
-3. **真实 CLI 集成测试**：每个 Gate 至少一次，RC 前全量（真实写/终端权限拒绝、播种、嵌套、回流、子进程重启、session 恢复）。
+3. **真实 CLI 集成测试**：每个 Gate 至少一次，RC 前全量（真实写/终端权限拒绝、播种、嵌套、回流、子进程重启、session 恢复）。消耗会员额度，重跑前先确认必要性。
 4. **UI 测试**：自动化或可重复手工脚本。
 
-**不得跳过的测试矩阵**：SEC-01~14（只读安全，G2 不允许任何"暂时跳过"）、BR-01~18（支线）、TREE/THREAD/REC（B-M4）。跨阶段回归原则：B-M2 后重跑 B-M1 崩溃测试，B-M3 后重跑 SEC 矩阵，RC 前跑全链路。
+**不得跳过的测试矩阵**：SEC-01~14（只读安全，G2 不允许任何"暂时跳过"）、BR-01~18（支线）、TREE/THREAD/REC（B-M4），见 TODO.md 各 Gate 节。`swift test` 始终全量跑，天然覆盖跨阶段回归。
 
 ## 9. 安全注意事项
 
