@@ -131,6 +131,8 @@ swift package resolve       # 解析/更新依赖
 
 四层测试体系（流程文档 §10）：
 
+**测试工程约定（2026-07-31 实测排坑）**：凡派生真实子进程的测试套件必须标 `@Suite(.serialized)`——swift-testing 高度并发 spawn 时，子进程会卡在 dyld 启动通知阶段假死（`dyld4::RemoteNotificationResponder::blockOnSynchronousEvent`，与业务代码无关）；等待子进程退出必须全程挂起且返回前确保已退出（Process 运行中 dealloc 会抛 NSException）。
+
 1. **单元测试**：PermissionPolicyEngine、BranchContextAssembler、BranchMergeService、ACP event adapter、session 路由、树构建（含孤儿/环检测）、锚点定位、migration、消息状态机。
 2. **ACP 测试替身**：以 `spike/samples/sanitized/` 的脱敏样本为 fixtures 建立 fake ACP process，可脚本化流式、工具事件、各类 permission、malformed message、子进程中途退出、多 session 交错等。替身用于稳定回归，**不能替代真实 CLI 验证**。
 3. **真实 CLI 集成测试**：每个 Gate 至少一次，RC 前全量（真实写/终端权限拒绝、播种、嵌套、回流、子进程重启、session 恢复）。

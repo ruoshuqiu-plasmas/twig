@@ -13,7 +13,7 @@
 - Done：测试通过、错误/空状态已处理、日志不记敏感内容、文档已同步、验收可重复；
 - 每完成一项立即更新本文件勾选状态与下方进度指针。
 
-**▶ 当前进度**：**任务 07 已完成**（Swift 骨架可构建，acp-swift-sdk PoC 四核对点通过，SDK 按 commit `b800b3f` 锁定）——下一项 `08. M1-008` 子进程 Supervisor（§5.5 状态机：notChecked…failed(reason)，有限重启+退避）
+**▶ 当前进度**：**任务 08 已完成**（子进程 Supervisor 九态状态机 + 环境探测 + 有限重启退避，14 测试全绿）——下一项 `09. M1-009` ACP transport 与 adapter（§5.6 `AgentEvent` 领域事件，未知事件保守记录）
 
 ---
 
@@ -50,7 +50,8 @@
   - 完成（2026-07-31）：`adr/ADR-001-acp-client-path.md`（含被否决方案、回退触发条件、兼容矩阵首行）
 - [x] 07. **M1-007** Swift 项目与模块骨架（按 §5.4 结构：App/Features/Core/Shared）｜ 依赖：M1-006 ｜ 输出：可构建工程
   - 完成（2026-07-31）：Swift 6.3.3 + SPM 工程落地（Package.swift，macOS 14+），§5.4 四层结构 24 个占位文件就位，`swift build` 通过。acp-swift-sdk PoC 通过：ADR-001 四个核对点（tool_call_update 稀疏字段容忍 / configOptions[] / sessionCapabilities{list,resume} / agent_thought_chunk）全部满足，fixtures 取自 G0 脱敏样本离线解码（未驱动真实 CLI）。**两个环境事实**：① 上游 SDK 尚无 release tag（仅 main 分支），按 commit `b800b3f` 锁定，待 1.0.0 发布转语义版本；② 本机仅 Command Line Tools（无 Xcode），XCTest/swift-testing 不可用，PoC 以可执行目标 `swift run schema-poc` 承载，装 Xcode 后迁回 testTarget。**已知缺口**：SDK `SessionNew.Result` 未建模 kimi 扩展字段 `configOptions[]`（解码静默丢弃，适配层需要时自行扩展）。
-- [ ] 08. **M1-008** 子进程 Supervisor（§5.5 状态机：notChecked…failed(reason)，有限重启+退避）｜ 依赖：M1-007 ｜ 输出：生命周期与状态机
+- [x] 08. **M1-008** 子进程 Supervisor（§5.5 状态机：notChecked…failed(reason)，有限重启+退避）｜ 依赖：M1-007 ｜ 输出：生命周期与状态机
+  - 完成（2026-07-31）：`SupervisorState` 九态全集（§5.5 原文）；`CLIEnvironmentProbe`（存在性/版本 ≥0.31.0 基线/凭据预判，对应 G1-02/03/04）；`ACPProcessSupervisor` actor（起停、stdout 流/send 唯一出入口、termination 监听、maxRestarts=3 + 退避 [1s,2s,4s] 内部配置、优雅停止＝关闭 stdin 超时升 SIGKILL 跳过 SIGTERM）。14 个单元测试全绿（fake CLI 脚本驱动，未耗额度）。**环境发现**：swift-testing 高度并发派生子进程时，子进程会卡在 dyld 启动通知阶段假死（sample 实证 `RemoteNotificationResponder::blockOnSynchronousEvent`）——派生子进程的测试套件须标 `.serialized`，已写入 AGENTS.md §8。
 - [ ] 09. **M1-009** ACP transport 与 adapter（§5.6 `AgentEvent` 领域事件，未知事件保守记录）｜ 依赖：M1-008 ｜ 输出：领域事件流
 - [ ] 10. **M1-010** Session 管理与路由（session ↔ thread/branch 映射）｜ 依赖：M1-009 ｜ 输出：session 映射
 - [ ] 11. **M1-011** GRDB 首版 migration（threads/messages/branches/branch_notes + §5.8 工程字段：sequence/status/updated_at/metadata_json/merge_note_id）｜ 依赖：M1-007 ｜ 输出：核心表与仓储
@@ -212,3 +213,5 @@
 - 2026-07-31（G0 收官）：任务 02/04/05 完成，G0 门槛 6 条过 5。产出：`spike/probe_acp.py`（协议探针）、`spike/samples/sanitized/`（9 类事件脱敏样本）、`spike/g0-findings.md`（结论报告）。关键结论：ACP v1 全链路通；读免审批、写/终端 permission 可拒且文件未落盘；session list/resume/load 全支持（DEC-04 关闭）；≤128KB 播种无失败点（DEC-05 数据落档）；stdin 关闭优雅退出、SIGTERM 无效；无官方 Swift SDK（DEC-01 证据齐）。消耗：10 个最小化 prompt 的会员额度。**阻塞：DEC-01 待用户拍板（推荐 rebornix/acp-swift-sdk PoC，备选手写 transport，不建议 Rust FFI）。**
 - 2026-07-31（DEC-01 关闭）：用户拍板采用 rebornix/acp-swift-sdk；任务 06 完成，`adr/ADR-001-acp-client-path.md` 定稿（含兼容矩阵首行与回退触发条件）。**Gate G0 正式通过（6/6）**。下一任务：07. M1-007 Swift 骨架 + SDK PoC。
 - 2026-07-31（M1-007 完成）：Swift 6.3.3 + SPM 工程骨架落地（Package.swift + App/Features/Core/Shared 四层 24 个占位文件），`swift build` 通过。acp-swift-sdk PoC 四核对点全部通过（`swift run schema-poc`，fixtures 为 G0 脱敏样本离线解码，未耗额度）。SDK 上游无 release tag，按 commit `b800b3f` 锁定（Package.resolved）；已知缺口 `configOptions[]` 未建模已记录。环境发现：本机仅 CLT 无 Xcode，测试框架不可用，PoC 暂以可执行目标承载。新增风险：SDK 无版本化管理，升级需人工核对 schema。下一任务：08. M1-008 子进程 Supervisor。
+- 2026-07-31（环境就绪+开源）：用户安装 Xcode 26.6，PoC 迁回 swift-testing testTarget（`Tests/CoreTests`，7 测试全绿）。仓库以 MIT 开源推送至 <https://github.com/ruoshuqiu-plasmas/twig>；`.gitignore` 排除 spike/samples/raw 与原始日志。分支管理授权代理代管（短分支 + Conventional Commits + 合并 main 推送）。
+- 2026-07-31（M1-008 完成，分支 feat/bm1-process-supervisor）：Supervisor 九态状态机 + CLIEnvironmentProbe + ACPProcessSupervisor 落地，14 个单元测试全绿（FakeCLI 脚本驱动，零额度消耗）。排坑记录：并行派生子进程的测试在 swift-testing 下因子进程 dyld 启动通知阻塞而假死超时（与代码无关，sample 实证），解法＝相关套件 `.serialized`；另遇 Process 运行中 dealloc 抛 NSException（解法＝返回前必等退出）。下一任务：09. M1-009 ACP transport 与 adapter。
