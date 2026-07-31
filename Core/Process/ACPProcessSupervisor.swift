@@ -33,6 +33,11 @@ public actor ACPProcessSupervisor {
 
     deinit {
         restartTask?.cancel()
+        // supervisor 销毁时绝不能留下活子进程：子进程会继承测试/应用进程的管道 FD，
+        // 泄漏的孙进程持有管道写端会导致父进程（如 swiftpm-testing-helper）永远等不到 EOF。
+        if let child = process, child.isRunning {
+            kill(child.processIdentifier, SIGKILL)
+        }
     }
 
     // MARK: - 状态观测
