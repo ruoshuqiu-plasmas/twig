@@ -1,5 +1,5 @@
 {
-  "originHash" : "b945dccef4d52ada180cb940a478b494ab4eec96ed4eb54f44429e342434b191",
+  "originHash" : "7680dce6e8034570f60fb906376b0cceddd75c962d43d9d69f808efe4738edb1",
   "pins" : [
     {
       "identity" : "acp-swift-sdk",
@@ -7,6 +7,15 @@
       "location" : "https://github.com/rebornix/acp-swift-sdk.git",
       "state" : {
         "revision" : "b800b3f2c251e3453fdd10172d671123e1908301"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift.git",
+      "state" : {
+        "revision" : "351f0f6f1b64b1abd325b43ae7cd9edd08c7e5c9",
+        "version" : "7.11.1"
       }
     },
     {

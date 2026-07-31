@@ -16,7 +16,9 @@ let package = Package(
         .package(url: "https://github.com/rebornix/acp-swift-sdk.git",
                  revision: "b800b3f2c251e3453fdd10172d671123e1908301"),
         // SDK 的 Transport/Client 协议要求 swift-log；显式声明直接依赖以便 import Logging。
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0")
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
+        // 任务 M1-011：本地持久化（SQLite）。数据库存取只走 Repository 层（§5.4 核心约束）。
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1")
     ],
     targets: [
         .executableTarget(
@@ -34,19 +36,23 @@ let package = Package(
             dependencies: [
                 "Shared",
                 .product(name: "ACP", package: "acp-swift-sdk"),
-                .product(name: "Logging", package: "swift-log")
+                .product(name: "Logging", package: "swift-log"),
+                .product(name: "GRDB", package: "GRDB.swift")
             ],
             path: "Core"
         ),
         .target(
             name: "Shared",
+            dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
             path: "Shared"
         ),
         .testTarget(
             name: "CoreTests",
             dependencies: [
                 "Core",
-                .product(name: "ACP", package: "acp-swift-sdk")
+                "Shared",
+                .product(name: "ACP", package: "acp-swift-sdk"),
+                .product(name: "GRDB", package: "GRDB.swift")
             ],
             path: "Tests/CoreTests",
             resources: [.copy("Fixtures")]
