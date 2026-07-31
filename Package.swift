@@ -8,8 +8,7 @@ let package = Package(
     name: "BranchConversation",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "BranchConversation", targets: ["App"]),
-        .executable(name: "schema-poc", targets: ["SchemaPoC"])
+        .executable(name: "BranchConversation", targets: ["App"])
     ],
     dependencies: [
         // ADR-001：rebornix/acp-swift-sdk。上游尚无版本 tag（仅 main 分支），
@@ -40,16 +39,13 @@ let package = Package(
             name: "Shared",
             path: "Shared"
         ),
-        // 本机仅 Command Line Tools（无 Xcode），XCTest/swift-testing 均不可用；
-        // PoC 以独立可执行目标承载：`swift run schema-poc`，失败时非零退出。
-        // 待安装 Xcode 后可迁回 testTarget。
-        .executableTarget(
-            name: "SchemaPoC",
+        .testTarget(
+            name: "CoreTests",
             dependencies: [
                 "Core",
                 .product(name: "ACP", package: "acp-swift-sdk")
             ],
-            path: "PoC/SchemaPoC",
+            path: "Tests/CoreTests",
             resources: [.copy("Fixtures")]
         )
     ],

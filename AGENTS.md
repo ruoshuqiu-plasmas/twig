@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：Swift 骨架已落地（任务 07 完成，2026-07-31）。** 仓库含产品/流程文档、执行台账（TODO.md）、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程骨架（Package.swift + App/Features/Core/Shared 四层占位模块，acp-swift-sdk PoC 已通过）。**仍不是 git 仓库。** 下一项工作是任务 08（M1-008）：子进程 Supervisor（§5.5 状态机，有限重启+退避）。
+**当前状态：Swift 骨架已落地（任务 07 完成，2026-07-31）。** 仓库含产品/流程文档、执行台账（TODO.md）、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程骨架（Package.swift + App/Features/Core/Shared 四层占位模块，acp-swift-sdk PoC 已通过）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 08（M1-008）：子进程 Supervisor（§5.5 状态机，有限重启+退避）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -32,8 +32,8 @@ Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore）
             Branching/（BranchContextAssembler, BranchMergeService）
             Persistence/（AppDatabase, Migrations/, Repositories/）
 Shared/     Models/ UIComponents/ Logging/ TestSupport/
-PoC/
-  SchemaPoC/                     acp-swift-sdk schema PoC（可执行目标；Fixtures/ 为 G0 脱敏样本提取件）
+Tests/
+  CoreTests/                     单元测试（swift-testing）；Fixtures/ 为 G0 脱敏样本提取件
 spike/
   probe_acp.py                   G0 协议探针（Python 3，stdlib-only），驱动 `kimi acp` 采集事件样本
   sanitize_samples.py            样本脱敏脚本（路径替换、他人会话遮蔽、敏感词扫描）
@@ -75,13 +75,13 @@ python3 sanitize_samples.py     # raw/ + stderr 日志 → sanitized/，含敏�
 **Swift 工程**（Swift 6.3.3 + SPM，最低 macOS 14；技术栈：SwiftUI + AppKit 互操作、GRDB（任务 11 引入）、acp-swift-sdk）：
 
 ```bash
-swift build                 # 构建全部目标（App/Features/Core/Shared/SchemaPoC）
+swift build                 # 构建全部目标（App/Features/Core/Shared）
 swift run BranchConversation # 启动应用（当前为骨架占位窗口）
-swift run schema-poc        # acp-swift-sdk schema PoC：四核对点离线解码验证，失败非零退出
-swift package resolve       # 解析/更新依赖（升级 SDK 后须重跑 schema-poc）
+swift test                  # 单元测试（swift-testing；含 acp-swift-sdk schema 核对，升级 SDK 后必跑）
+swift package resolve       # 解析/更新依赖
 ```
 
-**测试环境限制**：本机仅 Command Line Tools，未安装 Xcode，XCTest 与 swift-testing 模块均不可用，`swift test` 暂无法使用；单元测试暂以可执行目标承载（如 SchemaPoC），安装 Xcode 后迁回 testTarget。
+测试框架为 swift-testing（Xcode 26），测试位于 `Tests/CoreTests/`。
 
 ## 4. 锁定的版本基线（ADR-001 兼容矩阵首行）
 
@@ -113,7 +113,7 @@ swift package resolve       # 解析/更新依赖（升级 SDK 后须重跑 sche
 - **Done**：测试通过、错误/空状态已处理、日志不记敏感内容、文档已同步、验收可重复。
 - **决策点（DEC-01~11）**：到达前必须显式关闭，产出 ADR（`adr/` 目录）或实现说明；DEC-01/03/04 已关闭。
 - **Gate 制**：G0（已过）→ G1（B-M1 主对话）→ G2（B-M2 只读安全）→ G3（B-M3 支线）→ G4（B-M4 树/多线程/恢复）→ RC。阶段不得只按"代码写完"判断完成。
-- **分支与提交**（流程补充建议）：短分支 `spike/xxx`、`feat/bmN-xxx`、`fix/xxx`；提交信息用 Conventional Commits 风格英文，如 `feat(acp): establish session and stream text deltas`。每个合并请求只解决一个 Story 或一组强相关 Task。
+- **分支与提交**：短分支 `spike/xxx`、`feat/bmN-xxx`、`fix/xxx`；提交信息用 Conventional Commits 风格英文，如 `feat(acp): establish session and stream text deltas`。每个合并请求只解决一个 Story 或一组强相关 Task。**分支的创建、提交、合并回 `main` 与推送由代理代为管理**（用户 2026-07-31 授权，无需逐次确认）。
 
 ## 7. 代码规范（Swift 工程落地后适用）
 

@@ -8,18 +8,18 @@ macOS 原生桌面应用（Swift + SwiftUI），作为 **ACP（Agent Client Prot
 
 ## 构建
 
-要求：Swift 6+（Command Line Tools 或 Xcode），macOS 14+。
+要求：Swift 6+（Xcode 26 或 Command Line Tools），macOS 14+。运行测试需要 Xcode（swift-testing）。
 
 ```bash
 swift build                  # 构建全部目标
 swift run BranchConversation # 启动应用（当前为骨架占位窗口）
-swift run schema-poc         # ACP SDK schema 离线验证（fixtures 来自脱敏协议样本）
+swift test                   # 单元测试（含 ACP SDK schema 离线核对，fixtures 来自脱敏协议样本）
 ```
 
 ## 仓库结构
 
 - `App/` `Features/` `Core/` `Shared/` — Swift 工程四层（SPM target 与目录一一对应）
-- `PoC/SchemaPoC/` — acp-swift-sdk schema 验证（可执行目标）
+- `Tests/CoreTests/` — 单元测试（swift-testing；含 acp-swift-sdk schema 核对 fixtures）
 - `doc/` — 产品文档与开发流程（简体中文）
 - `adr/` — 架构决策记录
 - `spike/` — G0 协议探针（Python 3，stdlib-only）与脱敏协议样本
