@@ -1,0 +1,9 @@
+.build/
+DerivedData/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+.DS_Store
+# G0 未脱敏原始样本与原始 stderr 日志（含本机路径，勿入库勿外发，见 AGENTS.md §9）
+spike/samples/raw/
+spike/samples/*.log

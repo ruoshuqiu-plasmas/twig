@@ -1,0 +1,4 @@
+Failed to parse JSON message: this is not json SyntaxError: Unexpected token 'h', "this is not json" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at Object.start (/Users/runner/work/kimi-code/kimi-code/apps/kimi-code/dist-native/intermediates/main.cjs:316536:29)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)

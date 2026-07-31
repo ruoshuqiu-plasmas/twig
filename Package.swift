@@ -1,0 +1,57 @@
+// swift-tools-version: 6.0
+// 分支对话面板 · Swift 6 + SPM 工程骨架（任务 M1-007）
+// 分层结构依据 doc/分支对话面板-开发流程.md §5.4：
+//   App（可执行入口）→ Features（界面功能）→ Core（ACP/进程/策略/支线/持久化）→ Shared（模型/组件/日志/测试支撑）
+import PackageDescription
+
+let package = Package(
+    name: "BranchConversation",
+    platforms: [.macOS(.v14)],
+    products: [
+        .executable(name: "BranchConversation", targets: ["App"]),
+        .executable(name: "schema-poc", targets: ["SchemaPoC"])
+    ],
+    dependencies: [
+        // ADR-001：rebornix/acp-swift-sdk。上游尚无版本 tag（仅 main 分支），
+        // PoC 阶段按 commit 锁定（2026-07-31 实测 main HEAD），待上游发布 1.0.0 后转 from: 语义版本。
+        .package(url: "https://github.com/rebornix/acp-swift-sdk.git",
+                 revision: "b800b3f2c251e3453fdd10172d671123e1908301")
+    ],
+    targets: [
+        .executableTarget(
+            name: "App",
+            dependencies: ["Features", "Core", "Shared"],
+            path: "App"
+        ),
+        .target(
+            name: "Features",
+            dependencies: ["Core", "Shared"],
+            path: "Features"
+        ),
+        .target(
+            name: "Core",
+            dependencies: [
+                "Shared",
+                .product(name: "ACP", package: "acp-swift-sdk")
+            ],
+            path: "Core"
+        ),
+        .target(
+            name: "Shared",
+            path: "Shared"
+        ),
+        // 本机仅 Command Line Tools（无 Xcode），XCTest/swift-testing 均不可用；
+        // PoC 以独立可执行目标承载：`swift run schema-poc`，失败时非零退出。
+        // 待安装 Xcode 后可迁回 testTarget。
+        .executableTarget(
+            name: "SchemaPoC",
+            dependencies: [
+                "Core",
+                .product(name: "ACP", package: "acp-swift-sdk")
+            ],
+            path: "PoC/SchemaPoC",
+            resources: [.copy("Fixtures")]
+        )
+    ],
+    swiftLanguageModes: [.v6]
+)

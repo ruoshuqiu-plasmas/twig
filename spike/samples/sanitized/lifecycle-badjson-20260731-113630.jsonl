@@ -1,0 +1,2 @@
+{"ts": "2026-07-31T11:36:30.152", "dir": "out-raw", "msg": "this is not json"}
+{"ts": "2026-07-31T11:36:40.158", "dir": "local", "msg": {"event": "probe_close", "returncode": null}}

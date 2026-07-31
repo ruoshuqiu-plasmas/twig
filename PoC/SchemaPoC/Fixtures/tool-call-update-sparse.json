@@ -1,0 +1,17 @@
+{
+  "sessionId": "session_de10d968-e225-40b1-8d11-98582319b20a",
+  "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "0:tool_CyG0dav8Z0BGF5zQ4BPP8nuC",
+    "status": "in_progress",
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "{"
+        }
+      }
+    ]
+  }
+}

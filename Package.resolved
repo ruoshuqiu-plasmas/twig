@@ -1,0 +1,32 @@
+{
+  "originHash" : "b945dccef4d52ada180cb940a478b494ab4eec96ed4eb54f44429e342434b191",
+  "pins" : [
+    {
+      "identity" : "acp-swift-sdk",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/rebornix/acp-swift-sdk.git",
+      "state" : {
+        "revision" : "b800b3f2c251e3453fdd10172d671123e1908301"
+      }
+    },
+    {
+      "identity" : "swift-log",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-log.git",
+      "state" : {
+        "revision" : "a878e7f8f46cfc0e1125e565b5c08e7d5272dc9a",
+        "version" : "1.14.0"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system.git",
+      "state" : {
+        "revision" : "50688cacbd41d547e9eb9f7a213542340b7c442b",
+        "version" : "1.7.5"
+      }
+    }
+  ],
+  "version" : 3
+}

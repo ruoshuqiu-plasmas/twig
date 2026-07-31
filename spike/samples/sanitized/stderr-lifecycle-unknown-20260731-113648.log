@@ -1,0 +1,30 @@
+Error handling request {
+  jsonrpc: '2.0',
+  id: 'probe-1785469008930423000',
+  method: 'session/close',
+  params: { sessionId: 'nonexistent' }
+} {
+  code: -32601,
+  message: '"Method not found": session/close',
+  data: { method: 'session/close' }
+}
+Error handling request {
+  jsonrpc: '2.0',
+  id: 'probe-1785469008944568000',
+  method: 'logout',
+  params: {}
+} {
+  code: -32601,
+  message: '"Method not found": logout',
+  data: { method: 'logout' }
+}
+Error handling request {
+  jsonrpc: '2.0',
+  id: 'probe-1785469008944781000',
+  method: '_probe/bogus',
+  params: {}
+} {
+  code: -32601,
+  message: '"Method not found": _probe/bogus',
+  data: { method: '_probe/bogus' }
+}

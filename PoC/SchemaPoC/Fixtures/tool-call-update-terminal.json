@@ -1,0 +1,18 @@
+{
+  "sessionId": "session_de10d968-e225-40b1-8d11-98582319b20a",
+  "update": {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "0:tool_CyG0dav8Z0BGF5zQ4BPP8nuC",
+    "status": "completed",
+    "content": [
+      {
+        "type": "content",
+        "content": {
+          "type": "text",
+          "text": "1\t第一行：这是 G0 探针自建的种子文件。\n2\t第二行：用于采样读文件工具调用。\n3\t第三行：不包含任何真实项目内容。"
+        }
+      }
+    ],
+    "rawOutput": "1\t第一行：这是 G0 探针自建的种子文件。\n2\t第二行：用于采样读文件工具调用。\n3\t第三行：不包含任何真实项目内容。"
+  }
+}
