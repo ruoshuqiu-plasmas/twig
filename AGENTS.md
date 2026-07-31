@@ -23,7 +23,7 @@ doc/
 adr/
   ADR-001-acp-client-path.md     已定稿：采用 rebornix/acp-swift-sdk；含锁定版本基线、PoC 结论与回退触发条件
 Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标：App/Features/Core/Shared/SchemaPoC）
-Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system）
+Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1）
 App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI）
 Features/   MainChat/ BranchPanel/ ConversationTree/ Settings/（界面功能层占位）
 Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore）
@@ -72,7 +72,7 @@ python3 sanitize_samples.py     # raw/ + stderr 日志 → sanitized/，含敏�
 
 注意：探针会真实驱动 `~/.kimi-code/bin/kimi acp` 并**消耗会员额度**；prompt 均已最小化，重跑前先确认必要性。
 
-**Swift 工程**（Swift 6.3.3 + SPM，最低 macOS 14；技术栈：SwiftUI + AppKit 互操作、GRDB（任务 11 引入）、acp-swift-sdk）：
+**Swift 工程**（Swift 6.3.3 + SPM，最低 macOS 14；技术栈：SwiftUI + AppKit 互操作、GRDB 7.11.1（任务 11 已引入）、acp-swift-sdk）：
 
 ```bash
 swift build                 # 构建全部目标（App/Features/Core/Shared）
