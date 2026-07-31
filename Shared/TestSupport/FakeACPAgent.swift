@@ -96,4 +96,36 @@ public enum FakeACPAgent {
     done
     exit 0
     """
+
+    /// 多 session 路由流程（M1-010）：session/new 按调用次序返回 sess_1/sess_2/…；
+    /// prompt 从请求中提取 sessionId，回显归属该 session 的正文 chunk（text 为 `reply-<sid>`）。
+    /// 首次 prompt 额外发一条无主 session（sess_ghost）事件，验证路由层保守记录、不串线、不崩溃。
+    public static let multiSession = """
+    \(replyFn)
+    n=0
+    ghost_sent=0
+    while IFS= read -r line; do
+      case "$line" in
+        *notifications/initialized* | *notifications\\\\/initialized*) : ;;
+        *\\"initialize\\"*)
+          reply "$line" '\(initializeResponse)' ;;
+        *\\"session/new\\"* | *\\"session\\\\/new\\"*)
+          n=$((n+1))
+          reply "$line" "{\\"sessionId\\":\\"sess_$n\\"}" ;;
+        *\\"session/prompt\\"* | *\\"session\\\\/prompt\\"*)
+          if [[ "$line" =~ \\"sessionId\\":\\"([^\\"]+)\\" ]]; then
+            sid="${BASH_REMATCH[1]}"
+          else
+            sid="unknown"
+          fi
+          if [[ $ghost_sent -eq 0 ]]; then
+            ghost_sent=1
+            echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"sess_ghost","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"幽灵"}}}}'
+          fi
+          echo "{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"session/update\\",\\"params\\":{\\"sessionId\\":\\"$sid\\",\\"update\\":{\\"sessionUpdate\\":\\"agent_message_chunk\\",\\"content\\":{\\"type\\":\\"text\\",\\"text\\":\\"reply-$sid\\"}}}}"
+          reply "$line" '{"stopReason":"end_turn"}' ;;
+      esac
+    done
+    exit 0
+    """
 }

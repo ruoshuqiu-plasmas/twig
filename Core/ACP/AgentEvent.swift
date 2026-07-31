@@ -88,3 +88,22 @@ public enum PermissionDecision: Sendable, Equatable, Hashable {
     /// 协议定义的取消（default deny 的保守表达）。
     case cancelled
 }
+
+extension AgentEvent {
+    /// 事件归属的 ACP session id；``notice`` 等全局事件无归属（nil）。
+    /// 供 ``SessionStore`` 按 session 路由（M1-010）。
+    public var sessionID: String? {
+        switch self {
+        case .textDelta(let id, _), .thoughtDelta(let id, _), .userTextDelta(let id, _),
+             .toolCallStarted(let id, _), .toolCallUpdated(let id, _),
+             .completed(let id, _):
+            return id
+        case .permissionRequested(let data):
+            return data.sessionID
+        case .failed(let id, _), .unknown(_, let id):
+            return id
+        case .notice:
+            return nil
+        }
+    }
+}
