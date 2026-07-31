@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**任务 10+11 已完成**（SessionStore 映射/路由 + GRDB 首版 migration 与仓储，46 测试全绿）——下一项 `12. M1-012` 主对话状态机与流式 UI（§5.7）。⚠️ 推送前收尾：Package.resolved 的 GRDB revision 为本地合成哈希（网络受限期 zip 播种），须网络稳定时重新 resolve 换真实哈希 b83108d1（详见 `doc/工程笔记.md`）
+**▶ 当前进度**：**任务 10+11 已完成**（SessionStore 映射/路由 + GRDB 首版 migration 与仓储，46 测试全绿）——下一项 `12. M1-012` 主对话状态机与流式 UI（§5.7）。✅ GRDB 合成哈希收尾已完成（2026-08-01）：Package.resolved 钉真实提交 `b83108d1`，build/test 全绿，推送闸口解除
 
 ---
 
@@ -53,7 +53,7 @@
 - [x] 10. **M1-010** Session 管理与路由（session ↔ thread/branch 映射）｜ 依赖：M1-009 ｜ 输出：session 映射
   - 完成：`SessionStore`（映射/按 sessionID 事件 fan-out/子进程重启整表失效/持久化缝 SessionMappingStore），39/39 全绿
 - [x] 11. **M1-011** GRDB 首版 migration（threads/messages/branches/branch_notes + §5.8 工程字段）｜ 依赖：M1-007 ｜ 输出：核心表与仓储
-  - 完成：GRDB 7.11.1 + 四表 migration v1 + Thread/Message 仓储，46/46 全绿；⚠️ GRDB 合成哈希待换真实哈希（见进度指针与工程笔记）
+  - 完成：GRDB 7.11.1 + 四表 migration v1 + Thread/Message 仓储，46/46 全绿；GRDB 哈希已于 2026-08-01 修正为真实提交（见工程笔记）
 - [ ] 12. **M1-012** 主对话状态机与流式 UI（§5.7：发送即存、占位消息、delta 顺序追加、中断标记、跨线程路由）｜ 依赖：M1-009~011 ｜ 输出：主对话闭环
 - [ ] 13. **M1-013** 中断、重启、错误页面（CLI 缺失/版本不兼容/未登录三态区分）｜ 依赖：M1-008~012 ｜ 输出：恢复路径
 - [ ] 14. **M1-014** B-M1 自动与手工验收 ｜ 依赖：全部 ｜ 输出：G1 证据 + 测试报告
