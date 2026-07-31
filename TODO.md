@@ -13,7 +13,7 @@
 - Done：测试通过、错误/空状态已处理、日志不记敏感内容、文档已同步、验收可重复；
 - 每完成一项立即更新本文件勾选状态与下方进度指针。
 
-**▶ 当前进度**：**任务 08 已完成**（子进程 Supervisor 九态状态机 + 环境探测 + 有限重启退避，14 测试全绿）——下一项 `09. M1-009` ACP transport 与 adapter（§5.6 `AgentEvent` 领域事件，未知事件保守记录）
+**▶ 当前进度**：**任务 09 已完成**（ACP transport + adapter：领域事件流、握手/session/prompt 全链路、permission 缝 default deny，34 测试全绿连跑 6 次稳定）——下一项 `10. M1-010` Session 管理与路由（session ↔ thread/branch 映射）
 
 ---
 
@@ -52,7 +52,8 @@
   - 完成（2026-07-31）：Swift 6.3.3 + SPM 工程落地（Package.swift，macOS 14+），§5.4 四层结构 24 个占位文件就位，`swift build` 通过。acp-swift-sdk PoC 通过：ADR-001 四个核对点（tool_call_update 稀疏字段容忍 / configOptions[] / sessionCapabilities{list,resume} / agent_thought_chunk）全部满足，fixtures 取自 G0 脱敏样本离线解码（未驱动真实 CLI）。**两个环境事实**：① 上游 SDK 尚无 release tag（仅 main 分支），按 commit `b800b3f` 锁定，待 1.0.0 发布转语义版本；② 本机仅 Command Line Tools（无 Xcode），XCTest/swift-testing 不可用，PoC 以可执行目标 `swift run schema-poc` 承载，装 Xcode 后迁回 testTarget。**已知缺口**：SDK `SessionNew.Result` 未建模 kimi 扩展字段 `configOptions[]`（解码静默丢弃，适配层需要时自行扩展）。
 - [x] 08. **M1-008** 子进程 Supervisor（§5.5 状态机：notChecked…failed(reason)，有限重启+退避）｜ 依赖：M1-007 ｜ 输出：生命周期与状态机
   - 完成（2026-07-31）：`SupervisorState` 九态全集（§5.5 原文）；`CLIEnvironmentProbe`（存在性/版本 ≥0.31.0 基线/凭据预判，对应 G1-02/03/04）；`ACPProcessSupervisor` actor（起停、stdout 流/send 唯一出入口、termination 监听、maxRestarts=3 + 退避 [1s,2s,4s] 内部配置、优雅停止＝关闭 stdin 超时升 SIGKILL 跳过 SIGTERM）。14 个单元测试全绿（fake CLI 脚本驱动，未耗额度）。**环境发现**：swift-testing 高度并发派生子进程时，子进程会卡在 dyld 启动通知阶段假死（sample 实证 `RemoteNotificationResponder::blockOnSynchronousEvent`）——派生子进程的测试套件须标 `.serialized`，已写入 AGENTS.md §8。
-- [ ] 09. **M1-009** ACP transport 与 adapter（§5.6 `AgentEvent` 领域事件，未知事件保守记录）｜ 依赖：M1-008 ｜ 输出：领域事件流
+- [x] 09. **M1-009** ACP transport 与 adapter（§5.6 `AgentEvent` 领域事件，未知事件保守记录）｜ 依赖：M1-008 ｜ 输出：领域事件流
+  - 完成（2026-07-31，分支 feat/bm1-acp-adapter）：`AgentEvent` 十类领域事件 + `ToolCallInfo`/`PermissionRequestData`/`PermissionDecision`；`SupervisorTransport`（actor，架在 supervisor 上做 NDJSON 行分帧，CRLF 防御）；`ACPEventAdapter`（SDK SessionUpdate → 领域事件，tool_call_update 稀疏字段容忍，unknown 走 hook 保守记录）；`RequestPermission` 自扩展 Method（线格式按 G0 样本）；`ACPClient`（connect 联动 supervisor 状态/newSession/prompt/cancel/disconnect/多订阅者事件流，capabilities=.minimal 避开 fs 声明，permission 默认 default deny=cancelled 待 M2-005 接策略器）。20 个新测试（adapter 离线映射 14 + fake agent 端到端 3 + 既有回归），34/34 全绿且连跑 6 次稳定。**排坑三条**：① acp-swift-sdk 的 JSONEncoder 把 `/` 转义为 `\/`（`session\/new`），fake agent 按字面 `session/new` 匹配导致永不应答、测试挂死——含斜杠 method 须双写法兼容；② swiftpm-testing-helper 与测试同进程，孙进程（bash fake agent）继承管道 FD 泄漏会让 helper 永远等不到 EOF——supervisor deinit 已加 SIGKILL 兜底；③ swift-testing 下自制 withTimeout 不能用任务组实现（任务组隐式等待不响应取消的子任务），须非结构化竞速。另实测：SDK 的 request id 混用数字（initialize=1）与 UUID 字符串（session/new 起）。
 - [ ] 10. **M1-010** Session 管理与路由（session ↔ thread/branch 映射）｜ 依赖：M1-009 ｜ 输出：session 映射
 - [ ] 11. **M1-011** GRDB 首版 migration（threads/messages/branches/branch_notes + §5.8 工程字段：sequence/status/updated_at/metadata_json/merge_note_id）｜ 依赖：M1-007 ｜ 输出：核心表与仓储
 - [ ] 12. **M1-012** 主对话状态机与流式 UI（§5.7：发送即存、占位消息、delta 顺序追加、中断标记、跨线程路由）｜ 依赖：M1-009~011 ｜ 输出：主对话闭环
@@ -215,3 +216,5 @@
 - 2026-07-31（M1-007 完成）：Swift 6.3.3 + SPM 工程骨架落地（Package.swift + App/Features/Core/Shared 四层 24 个占位文件），`swift build` 通过。acp-swift-sdk PoC 四核对点全部通过（`swift run schema-poc`，fixtures 为 G0 脱敏样本离线解码，未耗额度）。SDK 上游无 release tag，按 commit `b800b3f` 锁定（Package.resolved）；已知缺口 `configOptions[]` 未建模已记录。环境发现：本机仅 CLT 无 Xcode，测试框架不可用，PoC 暂以可执行目标承载。新增风险：SDK 无版本化管理，升级需人工核对 schema。下一任务：08. M1-008 子进程 Supervisor。
 - 2026-07-31（环境就绪+开源）：用户安装 Xcode 26.6，PoC 迁回 swift-testing testTarget（`Tests/CoreTests`，7 测试全绿）。仓库以 MIT 开源推送至 <https://github.com/ruoshuqiu-plasmas/twig>；`.gitignore` 排除 spike/samples/raw 与原始日志。分支管理授权代理代管（短分支 + Conventional Commits + 合并 main 推送）。
 - 2026-07-31（M1-008 完成，分支 feat/bm1-process-supervisor）：Supervisor 九态状态机 + CLIEnvironmentProbe + ACPProcessSupervisor 落地，14 个单元测试全绿（FakeCLI 脚本驱动，零额度消耗）。排坑记录：并行派生子进程的测试在 swift-testing 下因子进程 dyld 启动通知阻塞而假死超时（与代码无关，sample 实证），解法＝相关套件 `.serialized`；另遇 Process 运行中 dealloc 抛 NSException（解法＝返回前必等退出）。下一任务：09. M1-009 ACP transport 与 adapter。
+
+- 2026-07-31（M1-009 完成，分支 feat/bm1-acp-adapter）：ACP transport 与 adapter 落地——`AgentEvent` 领域事件流（textDelta/thoughtDelta/toolCall/permission/notice/completed/failed/unknown）、`SupervisorTransport` NDJSON 行分帧、`ACPClient` 全链路封装（握手联动 supervisor 状态机、permission 默认 default deny）。34/34 测试全绿，连跑 6 次稳定，零额度消耗（fake agent bash 驱动）。排坑三条：SDK JSON 编码把 `/` 转义为 `\/` 导致 fake agent 匹配不到 method（测试挂死的根因）；testing-helper 同进程下孙进程 FD 泄漏卡死 EOF（supervisor deinit SIGKILL 兜底）；自制 withTimeout 不可用任务组（须非结构化竞速）。协议发现：SDK request id 混用数字与 UUID 字符串，fake agent 回显须两种都容忍。下一任务：10. M1-010 Session 管理与路由。

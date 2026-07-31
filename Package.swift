@@ -14,7 +14,9 @@ let package = Package(
         // ADR-001：rebornix/acp-swift-sdk。上游尚无版本 tag（仅 main 分支），
         // PoC 阶段按 commit 锁定（2026-07-31 实测 main HEAD），待上游发布 1.0.0 后转 from: 语义版本。
         .package(url: "https://github.com/rebornix/acp-swift-sdk.git",
-                 revision: "b800b3f2c251e3453fdd10172d671123e1908301")
+                 revision: "b800b3f2c251e3453fdd10172d671123e1908301"),
+        // SDK 的 Transport/Client 协议要求 swift-log；显式声明直接依赖以便 import Logging。
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0")
     ],
     targets: [
         .executableTarget(
@@ -31,7 +33,8 @@ let package = Package(
             name: "Core",
             dependencies: [
                 "Shared",
-                .product(name: "ACP", package: "acp-swift-sdk")
+                .product(name: "ACP", package: "acp-swift-sdk"),
+                .product(name: "Logging", package: "swift-log")
             ],
             path: "Core"
         ),
