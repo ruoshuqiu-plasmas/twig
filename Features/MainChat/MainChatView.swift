@@ -127,11 +127,22 @@ private struct MessageRow: View {
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity, alignment: .center)
         } else {
-            Text(displayContent)
-                .textSelection(.enabled)
+            bodyContent
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
                 .background(background, in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    /// 消息正文（M2-007）：assistant 稳定态走 Markdown 块渲染；
+    /// 流式中与 user 消息保持纯文本（流式先保可见，§6.5 第 1 条）。
+    @ViewBuilder
+    private var bodyContent: some View {
+        if message.role == .assistant && message.status != .streaming {
+            MarkdownBlockView(blocks: MarkdownBlockParser.parse(message.content))
+        } else {
+            Text(displayContent)
+                .textSelection(.enabled)
         }
     }
 
