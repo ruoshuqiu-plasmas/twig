@@ -72,6 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     var environment: AppEnvironment?
 
+    /// 裸可执行文件（无 .app bundle/Info.plist）默认按 accessory 策略运行，
+    /// 窗口无法成为 key window，键盘焦点留在终端——须显式改为 regular 并激活。
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         guard let environment else { return }
         let done = DispatchSemaphore(value: 0)
