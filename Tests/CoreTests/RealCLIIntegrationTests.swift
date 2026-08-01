@@ -74,4 +74,70 @@ struct RealCLIIntegrationTests {
 
         await client.disconnect()
     }
+
+    /// G2 真实 CLI 精简验收（M2-010，SEC-04/05/06/08/12 端到端面）：
+    /// 指示 CLI 在临时沙箱写文件 → 只读策略拒绝 → 文件未落盘、
+    /// 卡片收口 denied、notice 入库、对话继续到 completed。
+    /// 单轮单场景，额度消耗最小化（用户 2026-08-01 批准）。
+    @Test("真实 CLI：写文件被只读策略拒绝，文件未落盘且对话续行（G2 精简验收）")
+    func writeDeniedRealCLI() async throws {
+        guard enabled else { return }
+
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("twig-g2-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+        let targetFile = sandbox.appendingPathComponent("hello.txt")
+
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let supervisor = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client = ACPClient(supervisor: supervisor)
+        let sessionStore = SessionStore(mappingStore: threads)
+        let store = ConversationStore(
+            threads: threads,
+            messages: messages,
+            driver: LiveConversationDriver(client: client, sessionStore: sessionStore)
+        )
+
+        try await withTimeout(seconds: 120, operation: "G2 真实 CLI 验收") {
+            await sessionStore.attach(to: client)
+            try await client.connect()
+
+            try await store.openMostRecentOrCreate(projectRoot: sandbox.path)
+            try await store.send(text: "请创建文件 hello.txt，内容写 hello。只需要这一步，完成后简单确认即可。")
+            let threadID = try #require(await store.currentSnapshot().threadID)
+
+            // 等对话收尾（完成或被拒后续行到 end_turn）。
+            while true {
+                let last = try messages.messages(threadID: threadID).last { $0.role == .assistant }
+                if last?.status == .completed { break }
+                #expect(last?.status != .failed, "对话不应失败：\(last?.status ?? .streaming)")
+                try await Task.sleep(for: .milliseconds(200))
+            }
+
+            let all = try messages.messages(threadID: threadID)
+
+            // 文件未落盘（SEC-04/05 端到端：拒绝真实生效）。
+            #expect(!FileManager.default.fileExists(atPath: targetFile.path),
+                    "被拒绝的写操作不得落盘")
+
+            // 卡片收口 denied（SEC-12 标记可见）。
+            let deniedCards = all.filter {
+                $0.kind == .toolCall && $0.toolCallRecord()?.status == .denied
+            }
+            #expect(!deniedCards.isEmpty, "应有 denied 工具卡片，实际消息：\(all.map { "\($0.kind)/\($0.status)" })")
+
+            // notice 入库（SEC-13 数据面：拒绝记录可回看）。
+            #expect(all.contains { $0.kind == .notice }, "应有拒绝 notice 入库")
+            return true
+        }
+
+        await client.disconnect()
+    }
 }
