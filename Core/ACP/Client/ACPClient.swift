@@ -158,21 +158,35 @@ public actor ACPClient {
         toolTrackers[sessionID, default: ToolCallTracker()].apply(event)
     }
 
-    /// 内置默认链路：分类 → 策略器决策 → 脱敏日志 → 拒绝时对内部 tracker 标记 denied。
+    /// 内置默认链路：分类 → 策略器决策 → 脱敏日志 → 拒绝时对内部 tracker 标记 denied
+    /// 并广播 ``AgentEvent/toolCallDenied``（M2-006：对话流 notice 与卡片收口的数据源）。
     private func defaultPermissionDecision(_ data: PermissionRequestData) -> PermissionDecision {
         let kind = data.toolCallID.flatMap { toolTrackers[data.sessionID]?.record(callID: $0)?.kind }
         let operation = ToolOperationClassifier.classify(kind: kind, title: data.toolTitle)
         let outcome = policyEngine.decide(operation: operation, options: data.options)
         logger.info("permission 决策：操作=\(operation.rawValue)，原因=\(outcome.reason)")
-        if let callID = data.toolCallID, Self.isRejection(outcome.decision, options: data.options) {
-            toolTrackers[data.sessionID, default: ToolCallTracker()].markDenied(callID: callID)
+        if Self.isEffectiveDenial(outcome.decision, options: data.options) {
+            if let callID = data.toolCallID {
+                toolTrackers[data.sessionID, default: ToolCallTracker()].markDenied(callID: callID)
+            }
+            // 兜底 cancelled（含只读操作缺 allow_once 的边缘情况）同样视为实际未放行，
+            // 一律发 notice——「没放行就一定有可见标注」。文案缺档时退到 unparseable 档。
+            let noticeText = operation.denialNoticeText ?? ToolOperation.unparseable.denialNoticeText!
+            broadcast(.toolCallDenied(
+                sessionID: data.sessionID, callID: data.toolCallID,
+                operation: operation, noticeText: noticeText
+            ))
         }
         return outcome.decision
     }
 
-    /// 决策是否为规范拒绝（选中 kind=reject_once 的选项；optionId 不硬编码）。
-    private static func isRejection(_ decision: PermissionDecision, options: [PermissionRequestData.Option]) -> Bool {
-        guard case .selected(let optionID) = decision else { return false }
-        return options.first(where: { $0.optionID == optionID })?.kind == "reject_once"
+    /// 决策是否实际未放行（规范拒绝选中 reject_once，或兜底 cancelled；optionId 不硬编码）。
+    private static func isEffectiveDenial(_ decision: PermissionDecision, options: [PermissionRequestData.Option]) -> Bool {
+        switch decision {
+        case .cancelled:
+            return true
+        case .selected(let optionID):
+            return options.first(where: { $0.optionID == optionID })?.kind == "reject_once"
+        }
     }
 }

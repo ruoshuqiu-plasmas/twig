@@ -88,6 +88,29 @@ public enum FakeACPAgent {
     exit 0
     """
 
+    /// 权限放行流程（M2-006）：tool_call kind=read / title=Read 触发 permission 时
+    /// 走 allowlist 批准路径——应回 selected + allow_once，且不产生 toolCallDenied 事件。
+    public static let permissionAllow = """
+    \(replyFn)
+    while IFS= read -r line; do
+      case "$line" in
+        *notifications/initialized* | *notifications\\\\/initialized*) : ;;
+        *\\"initialize\\"*)
+          reply "$line" '\(initializeResponse)' ;;
+        *\\"session/new\\"* | *\\"session\\\\/new\\"*)
+          reply "$line" '{"sessionId":"session_fake"}' ;;
+        *\\"session/prompt\\"* | *\\"session\\\\/prompt\\"*)
+          echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session_fake","update":{"sessionUpdate":"tool_call","toolCallId":"0:tool_fake","title":"Read","kind":"read","status":"pending"}}}'
+          echo '{"jsonrpc":"2.0","id":1000,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"approve_always","name":"Approve for this session","kind":"allow_always"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_fake","title":"Read"}}}'
+          IFS= read -r permresp
+          echo "PERMRESP:$permresp" >&2
+          echo '\(messageChunk)'
+          reply "$line" '{"stopReason":"end_turn"}' ;;
+      esac
+    done
+    exit 0
+    """
+
     /// 分片传输：initialize 响应故意分两次写入（验证 NDJSON 行分帧的粘包/拆包容忍）。
     public static let fragmentedHandshake = """
     \(replyFn)

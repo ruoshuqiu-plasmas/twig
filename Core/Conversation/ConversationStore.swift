@@ -335,6 +335,8 @@ public actor ConversationStore {
             logger.debug("收到 thoughtDelta（不入正文）：thread=\(threadID.prefix(8))…")
         case .toolCallStarted, .toolCallUpdated:
             applyToolEvent(event, threadID: threadID)
+        case .toolCallDenied(_, let callID, let operation, let noticeText):
+            applyToolCallDenied(threadID: threadID, callID: callID, operation: operation, noticeText: noticeText)
         case .permissionRequested:
             // 响应由 ACPClient 的 default deny 处理（M2-005 接策略器），本层不重复决策。
             break
@@ -490,6 +492,41 @@ public actor ConversationStore {
             ctx.pendingToolMessageIDs.insert(messageID)
         }
         flushPendingToolCalls(&ctx)
+    }
+
+    /// 权限拒绝收口（M2-006）：卡片转 denied 终态强制落库 + 对话流落一条
+    /// ``MessageKind/notice``（透明展示，重启可回看，SEC-12/13 前置）。
+    /// metadata 只记决策类型与工具名，不记文件内容（§6.3 实现顺序 6）。
+    private func applyToolCallDenied(threadID: String, callID: String?, operation: ToolOperation, noticeText: String) {
+        guard var ctx = contexts[threadID] else { return }
+        let date = now()
+        if let callID, let messageID = ctx.toolCallMessageIDs[callID],
+           let index = ctx.messages.firstIndex(where: { $0.id == messageID }) {
+            let record = ctx.toolCallTracker.markDenied(callID: callID)
+            ctx.messages[index].content = record.contentText ?? record.title ?? ""
+            ctx.messages[index].metadataJSON = Self.encodeToolMetadata(record)
+            ctx.messages[index].status = .completed
+            ctx.messages[index].updatedAt = date
+            ctx.pendingToolMessageIDs.insert(messageID)
+            flushPendingToolCalls(&ctx)
+        }
+        // notice 低频且须重启可回看：不走节流，立即落库。
+        var metadata: [String: String] = ["operation": operation.rawValue]
+        if let callID { metadata["toolCallID"] = callID }
+        let metadataJSON = try? String(data: JSONEncoder().encode(metadata), encoding: .utf8)
+        do {
+            let notice = Message(
+                id: UUID().uuidString, threadID: threadID, role: .system, kind: .notice,
+                content: noticeText, sequence: try messages.nextSequence(threadID: threadID),
+                status: .completed, createdAt: date, updatedAt: date, metadataJSON: metadataJSON ?? nil
+            )
+            try messages.insert(notice)
+            ctx.messages.append(notice)
+        } catch {
+            logger.error("拒绝 notice 落库失败（保守记录）：\(error.localizedDescription)")
+        }
+        contexts[threadID] = ctx
+        if threadID == activeThreadID { publish() }
     }
 
     /// 工具摘要编码（不存完整 ACP SDK 对象，只存聚合后的 ``ToolCallRecord``）。

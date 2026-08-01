@@ -20,6 +20,9 @@ public enum AgentEvent: Sendable, Equatable {
     case toolCallUpdated(sessionID: String, call: ToolCallInfo)
     /// session/request_permission：权限请求（仅作透明展示；响应由策略器给出）。
     case permissionRequested(PermissionRequestData)
+    /// 权限策略器拒绝工具调用（M2-006）：对话流据此落一条 notice 并把卡片收口为 denied。
+    /// `noticeText` 取自 ``ToolOperation/denialNoticeText``（策略层文案）。
+    case toolCallDenied(sessionID: String, callID: String?, operation: ToolOperation, noticeText: String)
     /// 已知但暂不建模的事件摘要（plan/available_commands/current_mode/session_info/config_option）。
     case notice(String)
     /// prompt 完成（来自 session/prompt 响应的 stopReason）。
@@ -101,6 +104,8 @@ extension AgentEvent {
             return id
         case .permissionRequested(let data):
             return data.sessionID
+        case .toolCallDenied(let id, _, _, _):
+            return id
         case .failed(let id, _), .unknown(_, let id):
             return id
         case .notice:

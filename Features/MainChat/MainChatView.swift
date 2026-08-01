@@ -99,15 +99,18 @@ private struct MessageRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(roleTitle)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if message.kind != .notice {
+                Text(roleTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             content
             statusBadge
         }
     }
 
     /// 工具调用渲染为折叠卡片（M2-002）；metadata 解码失败回退纯文本，不崩溃。
+    /// 权限拒绝 notice（M2-006）渲染为居中警示小字，不走气泡。
     @ViewBuilder
     private var content: some View {
         if message.kind == .toolCall, let record = message.toolCallRecord() {
@@ -118,6 +121,11 @@ private struct MessageRow: View {
                 paths: record.paths ?? [],
                 content: record.contentText ?? message.content
             )
+        } else if message.kind == .notice {
+            Label(message.content, systemImage: "exclamationmark.shield")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, alignment: .center)
         } else {
             Text(displayContent)
                 .textSelection(.enabled)

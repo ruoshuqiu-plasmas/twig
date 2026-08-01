@@ -154,3 +154,40 @@ struct PermissionPolicyEngineTests {
         }
     }
 }
+
+/// 拒绝展示文案映射测试（M2-006，流程文档 §6.3 策略表「用户展示」列）。
+/// 文案集中在策略层，对话流 notice 与工具卡片标注共用同一来源。
+@Suite("ToolOperation 拒绝展示文案（M2-006）")
+struct DenialNoticeTextTests {
+
+    @Test("写文件/终端命令 → 已按只读策略拦截")
+    func writeAndExecuteText() {
+        #expect(ToolOperation.writeFile.denialNoticeText == "已按只读策略拦截")
+        #expect(ToolOperation.executeCommand.denialNoticeText == "已按只读策略拦截")
+    }
+
+    @Test("未知类型 → 未知操作已按保守策略拦截；无法解析 → 权限请求无法识别，已拒绝")
+    func unknownAndUnparseableText() {
+        #expect(ToolOperation.unknown.denialNoticeText == "未知操作已按保守策略拦截")
+        #expect(ToolOperation.unparseable.denialNoticeText == "权限请求无法识别，已拒绝")
+    }
+
+    @Test("只读三类批准放行，不产生 notice")
+    func allowedOperationsHaveNoNotice() {
+        for operation in [ToolOperation.readFile, .listDirectory, .search] {
+            #expect(operation.denialNoticeText == nil, "\(operation) 批准放行不应有拒绝文案")
+        }
+    }
+
+    @Test("CaseIterable 全覆盖：每档操作都有确定的文案或 nil（新增枚举值须显式归类）")
+    func allCasesClassified() {
+        for operation in ToolOperation.allCases {
+            if PermissionPolicyEngine().decide(operation: operation, options: [
+                .init(optionID: "r", name: "Reject", kind: "reject_once"),
+            ]).decision == .selected(optionID: "r") {
+                #expect(operation.denialNoticeText != nil,
+                        "会被拒绝的 \(operation) 必须有展示文案")
+            }
+        }
+    }
+}
