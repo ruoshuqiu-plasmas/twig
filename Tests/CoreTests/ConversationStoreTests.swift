@@ -253,4 +253,56 @@ struct ConversationStoreTests {
         #expect(driver.sentPrompts.map(\.text) == ["第一条"])
         #expect(await store.currentSnapshot().messages.count == 2)
     }
+
+    // MARK: - 进程中断与恢复（M1-013）
+
+    @Test("进程中断：全部线程的流式消息一并标记 interrupted（G1-07）")
+    func interruptAllStreaming() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "A")
+        let thread1 = await store.currentSnapshot().threadID!
+        try await store.newConversation(projectRoot: "/tmp")
+        try await store.send(text: "B")
+        let thread2 = await store.currentSnapshot().threadID!
+
+        // 两个线程都在流式中，模拟子进程被杀。
+        await store.interruptAllStreaming()
+
+        #expect(try messages.messages(threadID: thread1).last?.status == .interrupted)
+        #expect(try messages.messages(threadID: thread2).last?.status == .interrupted)
+        #expect(await store.currentSnapshot().phase == .interrupted)
+        _ = driver
+    }
+
+    @Test("重连重建 session：新 sessionID 生效、可继续对话、旧中断消息不改写（G1-08）")
+    func renewSessionsAfterReconnect() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        await store.interruptAllStreaming()
+        #expect(driver.sessions.count == 1)
+
+        // 重连：换驱动 + 重建 session。
+        let newDriver = FakeDriver()
+        await store.updateDriver(newDriver)
+        try await store.renewSessions()
+        #expect(newDriver.sessions.count == 1, "应为已知线程重建一个全新 session")
+        #expect(newDriver.sessions[0].owner == .thread(threadID))
+
+        // 新 session 上可正常对话（旧 session 不做续接假象）。
+        try await store.send(text: "再问")
+        let sessionID = newDriver.sessions[0].sessionID
+        newDriver.emit(sessionID: sessionID, .textDelta(sessionID: sessionID, text: "答"))
+        newDriver.emit(sessionID: sessionID, .completed(sessionID: sessionID, stopReason: "end_turn"))
+        try await waitFor("重建后对话完成") {
+            await store.currentSnapshot().phase == .completed
+        }
+
+        let stored = try messages.messages(threadID: threadID)
+        #expect(stored.map(\.status) == [.completed, .interrupted, .completed, .completed],
+               "旧中断消息不改写，新轮次正常完成")
+        #expect(stored.last?.content == "答")
+    }
 }

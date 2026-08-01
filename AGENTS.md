@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M1 主对话闭环已落地（任务 12 完成，2026-08-01）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层，Supervisor/ACP adapter/SessionStore/GRDB 持久化/主对话状态机与流式 UI 均已实现，53 测试全绿）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 13（M1-013）：中断、重启、错误页面。
+**当前状态：B-M1 恢复路径已落地（任务 13 完成，2026-08-01）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层，Supervisor/ACP adapter/SessionStore/GRDB 持久化/主对话状态机与流式 UI/中断恢复与三态错误页均已实现，57 测试全绿）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 14（M1-014）：B-M1 自动与手工验收（Gate G1）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -28,7 +28,7 @@ Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-
 App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI）
 Features/   MainChat/（MainChatView, MainChatViewModel）BranchPanel/ ConversationTree/ Settings/（后三者占位）
 Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore）
-            Process/（CLIEnvironmentProbe, ACPProcessSupervisor）
+            Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
             Branching/（BranchContextAssembler, BranchMergeService）
             Persistence/（AppDatabase, Migrations/, Repositories/）
@@ -51,7 +51,7 @@ spike/
 App/        BranchConversationApp.swift, AppEnvironment.swift
 Features/   MainChat/ BranchPanel/ ConversationTree/ Settings/
 Core/       ACP/（Client/Transport/EventAdapter/SessionStore）
-            Process/（CLIEnvironmentProbe, ACPProcessSupervisor）
+            Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
             Branching/（BranchContextAssembler, BranchMergeService）
             Persistence/（AppDatabase, Migrations, Repositories/）

@@ -46,7 +46,10 @@ public final class MainChatViewModel {
         do {
             try await store.openMostRecentOrCreate(projectRoot: projectRoot)
         } catch {
-            errorBanner = "会话初始化失败：\(error.localizedDescription)"
+            // 登录失效（凭据文件在但已过期）在 session 创建时才暴露，保守识别后引导登录（G1-04）。
+            errorBanner = StartupIssue.isAuthRelated(errorMessage: error.localizedDescription)
+                ? "Kimi Code CLI 登录可能已失效：请在终端运行 kimi 并输入 /login 重新登录，然后重启应用。"
+                : "会话初始化失败：\(error.localizedDescription)"
         }
     }
 
