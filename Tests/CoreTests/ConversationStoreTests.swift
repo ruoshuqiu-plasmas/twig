@@ -426,4 +426,81 @@ struct ConversationStoreTests {
         #expect(record?.status == .succeeded)
         #expect(record?.paths == ["/tmp/a.txt"])
     }
+
+    // MARK: - 拒绝 notice 与持久化（M2-006）
+
+    @Test("权限拒绝：卡片立即转 denied 强制落库 + notice 消息入库（SEC-12 标记可见）")
+    func toolCallDeniedProducesNotice() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+
+        let call = ToolCallInfo(toolCallID: "0:tool_e", title: "Write", kind: "edit", status: "pending")
+        driver.emit(sessionID: sessionID, .toolCallStarted(sessionID: sessionID, call: call))
+        try await waitFor("卡片消息创建") {
+            await store.currentSnapshot().messages.count == 3
+        }
+
+        // 策略器拒绝 → toolCallDenied：卡片转 denied 终态（不等 failed 终态事件），
+        // 对话流落一条 notice。
+        driver.emit(sessionID: sessionID, .toolCallDenied(
+            sessionID: sessionID, callID: "0:tool_e",
+            operation: .writeFile, noticeText: "已按只读策略拦截"
+        ))
+        try await waitFor("notice 落库") {
+            (try? messages.messages(threadID: threadID).count) == 4
+        }
+
+        let snapshot = await store.currentSnapshot()
+        let card = snapshot.messages[2]
+        #expect(card.kind == .toolCall && card.status == .completed)
+        #expect(card.toolCallRecord()?.status == .denied, "卡片立即收口 denied，不依赖 rejected 文本启发式")
+
+        let notice = snapshot.messages[3]
+        #expect(notice.kind == .notice && notice.role == .system)
+        #expect(notice.content == "已按只读策略拦截")
+        #expect(notice.status == .completed)
+        #expect(notice.metadataJSON?.contains(#""operation":"writeFile""#) == true,
+                "metadata 记录决策类型与工具标识，不记文件内容")
+
+        // 落库验证（不只看内存快照）。
+        let stored = try messages.messages(threadID: threadID)
+        #expect(stored[2].toolCallRecord()?.status == .denied)
+        #expect(stored[3].kind == .notice && stored[3].content == "已按只读策略拦截")
+    }
+
+    @Test("拒绝后重启：denied 卡片与 notice 均可回看（SEC-13 数据面）")
+    func denialSurvivesReopen() async throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let driver = FakeDriver()
+        let store = ConversationStore(threads: threads, messages: messages, driver: driver, flushInterval: 0)
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+
+        driver.emit(sessionID: sessionID, .toolCallDenied(
+            sessionID: sessionID, callID: nil,
+            operation: .unknown, noticeText: "未知操作已按保守策略拦截"
+        ))
+        try await waitFor("notice 落库") {
+            (try? messages.messages(threadID: threadID).count) == 3
+        }
+
+        // 模拟重启：新 driver + 新 Store，同一库。
+        let newDriver = FakeDriver()
+        let newStore = ConversationStore(threads: threads, messages: messages, driver: newDriver, flushInterval: 0)
+        try await newStore.openMostRecentOrCreate(projectRoot: "/tmp")
+
+        let snapshot = await newStore.currentSnapshot()
+        #expect(snapshot.threadID == threadID)
+        let notice = snapshot.messages.last
+        #expect(notice?.kind == .notice)
+        #expect(notice?.content == "未知操作已按保守策略拦截")
+        #expect(notice?.metadataJSON?.contains(#""operation":"unknown""#) == true)
+    }
 }

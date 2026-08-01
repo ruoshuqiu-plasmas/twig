@@ -48,6 +48,10 @@ struct BranchConversationApp: App {
             .frame(minWidth: 640, minHeight: 480)
             .task { await startUp() }
         }
+        // 设置页（M2-006）：只读策略展示，无修改入口。
+        Settings {
+            SettingsView()
+        }
     }
 
     // MARK: - 启动（环境检测三态 → 连接）

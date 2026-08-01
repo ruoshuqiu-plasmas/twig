@@ -21,9 +21,7 @@ public struct PermissionPolicyEngine: Sendable {
     }
 
     /// 只读 allowlist（第一阶段唯一放行集）。
-    private static let allowedOperations: Set<ToolOperation> = [.readFile, .listDirectory, .search]
-
-    /// 纯函数式决策：同一输入必得同一输出，多并发请求各自独立（SEC-11）。
+    private static let allowedOperations: Set<ToolOperation> = [.readFile, .listDirectory, .search]    /// 纯函数式决策：同一输入必得同一输出，多并发请求各自独立（SEC-11）。
     public func decide(operation: ToolOperation, options: [PermissionRequestData.Option]) -> Outcome {
         if Self.allowedOperations.contains(operation) {
             if let option = options.first(where: { $0.kind == "allow_once" }) {
@@ -51,5 +49,24 @@ public struct PermissionPolicyEngine: Sendable {
             operation: operation,
             reason: "非只读/未知操作且 options 缺 reject_once，兜底取消"
         )
+    }
+}
+
+extension ToolOperation {
+    /// 拒绝展示文案（任务 M2-006，流程文档 §6.3 策略表「用户展示」列）。
+    ///
+    /// 对话流 notice 与工具卡片的拒绝标注统一取自此处（文案集中在策略层，
+    /// 不散落到 View）；只读三类批准放行，不产生 notice（返回 nil）。
+    public var denialNoticeText: String? {
+        switch self {
+        case .readFile, .listDirectory, .search:
+            return nil
+        case .writeFile, .executeCommand:
+            return "已按只读策略拦截"
+        case .unknown:
+            return "未知操作已按保守策略拦截"
+        case .unparseable:
+            return "权限请求无法识别，已拒绝"
+        }
     }
 }

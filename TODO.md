@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**任务 19 已完成**（16~19 一次做完：工具折叠卡片接线与持久化 + 权限分类/策略器/ACP 接入，84 测试全绿）——下一项 `20. M2-006` 拒绝 notice 与持久化（依赖 M2-002/005，已就绪）
+**▶ 当前进度**：**任务 20 已完成**（M2-006 拒绝 notice 与持久化：策略表文案透出 + notice 落库可回看 + 设置页只读策略，91 测试全绿）——下一项 `⬦ DEC-08` Markdown/高亮库选型（ADR-002，B-M2 前半关闭）→ `21. M2-007` Markdown 渲染方案验证
 
 ---
 
@@ -89,7 +89,8 @@
   - 完成：纯函数 `decide(operation:options:)`（allowlist 选 allow_once、其余选 reject_once 回 selected+optionId，缺档兜底 cancelled；决策带脱敏 reason）；SEC-04~11/14 单测逐条覆盖
 - [x] 19. **M2-005** ACP permission 响应接入（回调只进策略器，返回合规批准/拒绝响应）｜ 依赖：M2-004 ｜ 输出：实际批准/拒绝
   - 完成：ACPClient 内置「per-session ToolCallTracker 查 kind → Classifier → PolicyEngine」默认链路（拒绝时 markDenied；permissionHandler 仍可注入替换）；fake agent 集成测试验证 Write 回 selected+reject optionId（optionId 不硬编码）
-- [ ] 20. **M2-006** 拒绝 notice 与持久化（对话流标注「已按只读策略拦截」；设置页只展示不修改）｜ 依赖：M2-002/005 ｜ 输出：透明展示
+- [x] 20. **M2-006** 拒绝 notice 与持久化（对话流标注「已按只读策略拦截」；设置页只展示不修改）｜ 依赖：M2-002/005 ｜ 输出：透明展示
+  - 完成：`ToolOperation.denialNoticeText` 策略表文案（策略层统一来源）+ `AgentEvent.toolCallDenied`（ACPClient 拒绝/兜底取消一律广播，「没放行就有标注」）+ ConversationStore 卡片立即收口 denied 强制落库、notice 消息（kind=notice，metadata 记 operation/toolCallID 不记内容）即时落库可回看（SEC-12/13 数据面）+ MessageRow notice 渲染 + Settings scene 只读策略页（⌘,）；91 测试全绿
 - [ ] ⬦ DEC-08：Markdown/高亮库选型（Splash vs Highlightr；依据：SwiftUI 集成/增量性能/语言覆盖/维护/许可证）→ ADR-002（B-M2 前半关闭）
 - [ ] 21. **M2-007** Markdown 渲染方案验证（流式先保可见，稳定片段再解析；解析失败回退纯文本）｜ 依赖：M1-012 ｜ 输出：ADR-002
 - [ ] 22. **M2-008** 代码块高亮与回退（超长块不做一次性昂贵高亮）｜ 依赖：M2-007 ｜ 输出：富文本渲染

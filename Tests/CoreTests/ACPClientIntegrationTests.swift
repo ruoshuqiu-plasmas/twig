@@ -123,6 +123,69 @@ struct ACPClientIntegrationTests {
                     "应选中 reject_once 选项，实际 \(permResp ?? "无")")
         }
 
+        // M2-006：拒绝须广播 toolCallDenied（对话流 notice 与卡片收口的数据源）。
+        let deniedEvent = events.first {
+            if case .toolCallDenied = $0 { return true }
+            return false
+        }
+        guard case .toolCallDenied(let deniedSession, let deniedCall, let operation, let noticeText) = deniedEvent else {
+            Issue.record("应包含 toolCallDenied 事件，实际 \(events)")
+            collectTask.cancel()
+            await client.disconnect()
+            return
+        }
+        #expect(deniedSession == "session_fake")
+        #expect(deniedCall == "0:tool_fake")
+        #expect(operation == .writeFile, "kind=edit 应分类为 writeFile")
+        #expect(noticeText == "已按只读策略拦截")
+
+        collectTask.cancel()
+        await client.disconnect()
+    }
+
+    @Test("permission 放行：只读操作批准（selected + allow_once）且不产生 toolCallDenied")
+    func permissionAllowlistApprove() async throws {
+        let stderr = StderrCollector()
+        let (client, _) = try await makeClient(agentBehavior: FakeACPAgent.permissionAllow, stderr: stderr)
+        let collector = EventCollector()
+        let collectTask = collectEvents(of: client, into: collector)
+
+        try await withTimeout(seconds: 10, operation: "connect") { try await client.connect() }
+        let sessionID = try await withTimeout(seconds: 10, operation: "newSession") {
+            try await client.newSession(cwd: "/tmp")
+        }
+        try await withTimeout(seconds: 10, operation: "prompt") {
+            try await client.prompt(sessionID: sessionID, text: "读个文件")
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let events = await collector.events
+        let permissionEvent = events.first {
+            if case .permissionRequested = $0 { return true }
+            return false
+        }
+        guard case .permissionRequested(let data) = permissionEvent else {
+            Issue.record("应包含 permissionRequested 事件，实际 \(events)")
+            collectTask.cancel()
+            await client.disconnect()
+            return
+        }
+        let allowOption = data.options.first { $0.kind == "allow_once" }
+        #expect(allowOption != nil)
+
+        let stderrLines = await stderr.lines
+        let permResp = stderrLines.first { $0.hasPrefix("PERMRESP:") }
+        #expect(permResp?.contains(#""outcome":"selected""#) == true,
+                "只读操作应批准（selected），实际 \(permResp ?? "无")")
+        if let allowOption {
+            #expect(permResp?.contains(#""optionId":"\#(allowOption.optionID)""#) == true,
+                    "应选中 allow_once 选项，实际 \(permResp ?? "无")")
+        }
+        #expect(!events.contains {
+            if case .toolCallDenied = $0 { return true }
+            return false
+        }, "批准放行不得产生 toolCallDenied")
+
         collectTask.cancel()
         await client.disconnect()
     }
