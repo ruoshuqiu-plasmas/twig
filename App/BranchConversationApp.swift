@@ -3,23 +3,42 @@ import AppKit
 import Core
 import Features
 
-/// 应用入口（任务 M1-012 起为真实主对话界面）。
-/// 启动流程：装配 AppEnvironment → 事件路由/子进程/握手（``AppEnvironment/start()``）→ 进入主对话。
-/// CLI 缺失/版本不兼容/未登录三态引导页归 M1-013，此处仅简版错误页 + 重试。
+/// 应用入口（任务 M1-012 起为真实主对话界面，M1-013 起含三态错误页与断连恢复）。
+/// 启动流程：装配 AppEnvironment → 环境检测（三态引导）→ 子进程/握手 → 进入主对话；
+/// 运行期：监听 supervisor 状态，异常退出 → 标记中断 + 自动重启/重连（G1-07/08）。
 @main
 struct BranchConversationApp: App {
 
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @State private var environment: AppEnvironment?
     @State private var viewModel: MainChatViewModel?
-    @State private var startupError: String?
+    @State private var startupIssue: StartupIssue?
+    @State private var connectionIssue: ConnectionIssue?
+    @State private var recoveryObserver: Task<Void, Never>?
+
+    /// 运行期连接状态（子进程异常退出后的恢复路径，G1-07/08）。
+    enum ConnectionIssue: Equatable {
+        /// 自动重启/重连进行中。
+        case recovering
+        /// 自动恢复失败，需手动重连。
+        case failed(String)
+    }
 
     var body: some Scene {
         WindowGroup {
             Group {
-                if let viewModel {
-                    MainChatView(viewModel: viewModel)
-                } else if let startupError {
-                    startupErrorView(startupError)
+                if let startupIssue {
+                    StartupIssueView(issue: startupIssue) {
+                        self.startupIssue = nil
+                        Task { await startUp() }
+                    }
+                } else if let viewModel {
+                    VStack(spacing: 0) {
+                        if let connectionIssue {
+                            connectionBanner(connectionIssue)
+                        }
+                        MainChatView(viewModel: viewModel)
+                    }
                 } else {
                     ProgressView("正在连接 Kimi Code CLI…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -30,39 +49,177 @@ struct BranchConversationApp: App {
         }
     }
 
+    // MARK: - 启动（环境检测三态 → 连接）
+
     private func startUp() async {
-        guard viewModel == nil, startupError == nil else { return }
+        guard viewModel == nil else { return }
         do {
-            let environment = try AppEnvironment.make()
-            appDelegate.environment = environment
-            try await environment.start()
+            let env = try AppEnvironment.make()
+            appDelegate.environment = env
+            environment = env
+            // 先显式环境检测：三类失败走各自引导页（G1-02/03/04），不崩不混。
+            let probe = await env.supervisor.checkEnvironment()
+            if let issue = StartupIssue(probeResult: probe) {
+                startupIssue = issue
+                return
+            }
+            try await env.start()
             // B-M1 临时方案：project_root 取进程工作目录（M4-007 提供选择入口）。
             let cwd = FileManager.default.currentDirectoryPath
             let projectRoot = cwd == "/" ? NSHomeDirectory() : cwd
-            viewModel = MainChatViewModel(store: environment.conversationStore, projectRoot: projectRoot)
+            viewModel = MainChatViewModel(store: env.conversationStore, projectRoot: projectRoot)
+            observeRecovery(env)
         } catch {
-            startupError = error.localizedDescription
+            // 登录失效（凭据文件在但已过期）以协议错误形态出现，保守识别后引导登录（G1-04）。
+            startupIssue = StartupIssue.isAuthRelated(errorMessage: error.localizedDescription)
+                ? .loginRequired
+                : .connectFailed(reason: error.localizedDescription)
         }
     }
 
-    private func startupErrorView(_ message: String) -> some View {
+    // MARK: - 运行期断连恢复（G1-07/08）
+
+    private func observeRecovery(_ env: AppEnvironment) {
+        recoveryObserver?.cancel()
+        recoveryObserver = Task { @MainActor in
+            for await state in await env.supervisor.states() {
+                if Task.isCancelled { return }
+                switch state {
+                case .restarting:
+                    // 子进程异常退出：流式消息标记中断（保留已收内容，G1-07）。
+                    await env.sessionStore.markAllStale()
+                    await env.conversationStore.interruptAllStreaming()
+                    connectionIssue = .recovering
+                case .failed(let reason):
+                    await env.sessionStore.markAllStale()
+                    await env.conversationStore.interruptAllStreaming()
+                    connectionIssue = .failed(reason)
+                case .starting:
+                    // 自动重启拉起了新进程等待握手 → 自动重连（初次启动不经此路径）。
+                    guard connectionIssue == .recovering else { continue }
+                    do {
+                        try await env.reconnect()
+                        connectionIssue = nil
+                    } catch {
+                        connectionIssue = .failed(error.localizedDescription)
+                    }
+                case .ready:
+                    if connectionIssue == .recovering { connectionIssue = nil }
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    private func reconnect() {
+        guard let environment else { return }
+        connectionIssue = .recovering
+        Task {
+            do {
+                try await environment.reconnect()
+                connectionIssue = nil
+            } catch {
+                connectionIssue = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    private func connectionBanner(_ issue: ConnectionIssue) -> some View {
+        HStack(spacing: 8) {
+            switch issue {
+            case .recovering:
+                ProgressView()
+                    .controlSize(.small)
+                Text("连接中断：子进程意外退出，正在自动恢复…")
+            case .failed(let reason):
+                Image(systemName: "exclamationmark.triangle")
+                Text("连接已断开：\(reason)")
+                    .lineLimit(2)
+                Spacer()
+                Button("重新连接") { reconnect() }
+            }
+        }
+        .padding(8)
+        .background(.orange.opacity(0.15))
+    }
+}
+
+/// 启动期三态引导页（M1-013，G1-02/03/04）：
+/// 文案中的安装/升级/登录命令依据官方文档（kimi.com/code/docs，2026-08-01 核对）。
+private struct StartupIssueView: View {
+
+    let issue: StartupIssue
+    let onRetry: () -> Void
+
+    var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
+            Image(systemName: icon)
                 .font(.largeTitle)
                 .foregroundStyle(.yellow)
-            Text("无法连接 Kimi Code CLI")
+            Text(title)
                 .font(.headline)
-            Text(message)
+            Text(guidance)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-            Button("重试") {
-                startupError = nil
-                Task { await startUp() }
+                .frame(maxWidth: 440)
+            if let command {
+                Text(command)
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
+                    .background(.gray.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
             }
+            Button("重试", action: onRetry)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    private var icon: String {
+        switch issue {
+        case .cliMissing: return "shippingbox"
+        case .unsupportedVersion: return "arrow.triangle.2.circlepath"
+        case .loginRequired: return "person.badge.key"
+        case .connectFailed: return "exclamationmark.triangle"
+        }
+    }
+
+    private var title: String {
+        switch issue {
+        case .cliMissing: return "未检测到 Kimi Code CLI"
+        case .unsupportedVersion: return "CLI 版本不兼容"
+        case .loginRequired: return "Kimi Code CLI 未登录"
+        case .connectFailed: return "无法连接 Kimi Code CLI"
+        }
+    }
+
+    private var guidance: String {
+        switch issue {
+        case .cliMissing:
+            return "本应用依赖本机的 Kimi Code CLI。请在终端执行以下命令安装，完成后点击「重试」。"
+        case .unsupportedVersion(let found):
+            let foundText = found ?? "无法识别的版本"
+            return "检测到版本 \(foundText)，本应用已验证的基线为 0.31.0 及以上。请在终端运行 kimi upgrade 升级后点击「重试」。"
+        case .loginRequired:
+            return "请在终端运行 kimi，在交互界面输入 /login 完成登录（OAuth 或 API Key），然后点击「重试」。"
+        case .connectFailed(let reason):
+            return reason
+        }
+    }
+
+    private var command: String? {
+        switch issue {
+        case .cliMissing:
+            return "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash"
+        case .unsupportedVersion:
+            return "kimi upgrade"
+        case .loginRequired:
+            return "kimi  # 然后输入 /login"
+        case .connectFailed:
+            return nil
+        }
     }
 }
 

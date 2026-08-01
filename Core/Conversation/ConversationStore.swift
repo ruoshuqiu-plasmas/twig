@@ -66,7 +66,8 @@ public actor ConversationStore {
 
     private let threads: ThreadRepository
     private let messages: MessageRepository
-    private let driver: any ConversationDriver
+    /// 重连后由 ``updateDriver(_:)`` 替换（旧 driver 绑定的 client 已随进程死亡）。
+    private var driver: any ConversationDriver
     private let logger: Logger
     /// delta 节流落库间隔（秒）；测试注入 0 使每个 delta 立即落库。
     private let flushInterval: TimeInterval
@@ -261,6 +262,35 @@ public actor ConversationStore {
         if threadID == activeThreadID { publish() }
     }
 
+    // MARK: - 进程中断与恢复（M1-013）
+
+    /// 子进程异常退出时调用：全部线程的流式消息标记 interrupted（保留已收内容，G1-07）。
+    public func interruptAllStreaming() {
+        for threadID in contexts.keys {
+            interrupt(threadID: threadID)
+        }
+    }
+
+    /// 重连后替换驱动（新 ACPClient）。
+    public func updateDriver(_ driver: any ConversationDriver) {
+        self.driver = driver
+    }
+
+    /// 重连成功后为全部已知线程**重建** session（G1-08）：
+    /// 旧 session 随进程死亡不可用，本方法只建新 session、不做续接假象
+    /// （list/resume/load 恢复策略归 M4-010）；线程历史全在本地库，不依赖 agent 侧重放。
+    public func renewSessions() async throws {
+        for threadID in contexts.keys {
+            guard var ctx = contexts[threadID] else { continue }
+            ctx.consumptionTask?.cancel()
+            let sessionID = try await driver.makeSession(cwd: ctx.thread.projectRoot, owner: .thread(threadID))
+            ctx.sessionID = sessionID
+            contexts[threadID] = ctx
+            await startConsumption(threadID: threadID)
+        }
+        logger.info("session 已全部重建（共 \(self.contexts.count) 个线程）")
+    }
+
     // MARK: - 事件消费
 
     private func startConsumption(threadID: String) async {
@@ -271,7 +301,11 @@ public actor ConversationStore {
             for await event in stream {
                 await self?.handle(event, threadID: threadID)
             }
-            await self?.streamEnded(threadID: threadID)
+            // 主动取消（renewSessions 换 session）不视为中断；
+            // 只有流自然终止（进程死亡/断开）才标记 interrupted。
+            if !Task.isCancelled {
+                await self?.streamEnded(threadID: threadID)
+            }
         }
         ctx.consumptionTask = task
         contexts[threadID] = ctx
