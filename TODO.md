@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**任务 20 已完成**（M2-006 拒绝 notice 与持久化：策略表文案透出 + notice 落库可回看 + 设置页只读策略，91 测试全绿）——下一项 `⬦ DEC-08` Markdown/高亮库选型（ADR-002，B-M2 前半关闭）→ `21. M2-007` Markdown 渲染方案验证
+**▶ 当前进度**：**Gate G2 已通过**（B-M2 收官，2026-08-01）：DEC-08 拍板（ADR-002：Highlightr + swift-markdown 自渲染）→ Markdown 块级渲染 + 代码高亮（超限熔断）+ 全块可选中 → SEC 全量与真实 CLI 精简验收，110 测试全绿，证据见 `doc/G2-验收报告.md`——下一项 `25. M3-001` NSTextView 选区监听（B-M3 支线开工；DEC-07 锚点字段决策须在任务 26 前关闭）
 
 ---
 
@@ -91,28 +91,32 @@
   - 完成：ACPClient 内置「per-session ToolCallTracker 查 kind → Classifier → PolicyEngine」默认链路（拒绝时 markDenied；permissionHandler 仍可注入替换）；fake agent 集成测试验证 Write 回 selected+reject optionId（optionId 不硬编码）
 - [x] 20. **M2-006** 拒绝 notice 与持久化（对话流标注「已按只读策略拦截」；设置页只展示不修改）｜ 依赖：M2-002/005 ｜ 输出：透明展示
   - 完成：`ToolOperation.denialNoticeText` 策略表文案（策略层统一来源）+ `AgentEvent.toolCallDenied`（ACPClient 拒绝/兜底取消一律广播，「没放行就有标注」）+ ConversationStore 卡片立即收口 denied 强制落库、notice 消息（kind=notice，metadata 记 operation/toolCallID 不记内容）即时落库可回看（SEC-12/13 数据面）+ MessageRow notice 渲染 + Settings scene 只读策略页（⌘,）；91 测试全绿
-- [ ] ⬦ DEC-08：Markdown/高亮库选型（Splash vs Highlightr；依据：SwiftUI 集成/增量性能/语言覆盖/维护/许可证）→ ADR-002（B-M2 前半关闭）
-- [ ] 21. **M2-007** Markdown 渲染方案验证（流式先保可见，稳定片段再解析；解析失败回退纯文本）｜ 依赖：M1-012 ｜ 输出：ADR-002
-- [ ] 22. **M2-008** 代码块高亮与回退（超长块不做一次性昂贵高亮）｜ 依赖：M2-007 ｜ 输出：富文本渲染
-- [ ] 23. **M2-009** 工具结果文本可选中（代码块/引用/列表/段落均保留选区能力；AppKit 选区层不与渲染层互覆）｜ 依赖：M2-002/008 ｜ 输出：B-M3 前置能力
-- [ ] 24. **M2-010** SEC 全量测试 ｜ 依赖：M2-003~009 ｜ 输出：G2 证据
+- [x] ⬦ DEC-08：Markdown/高亮库选型（2026-08-01 拍板）：**Highlightr 2.3.0（MIT+BSD，highlight.js 内核，185 语言）做代码高亮 + Apple swift-markdown 0.8.0（Apache-2.0）块级解析 + SwiftUI 块级自渲染**；否决 Splash（仅 Swift/停更）与 MarkdownUI（维护模式/选区控制差）→ **ADR-002 已定稿**：`adr/ADR-002-markdown-rendering.md`
+- [x] 21. **M2-007** Markdown 渲染方案验证（流式先保可见，稳定片段再解析；解析失败回退纯文本）｜ 依赖：M1-012 ｜ 输出：ADR-002
+  - 完成：`MarkdownBlockParser`（swift-markdown AST → 七类块，未识别块降级 plain 不丢内容）+ `MarkdownBlockView` 块级渲染 + MessageRow 接线（assistant 稳定态块渲染、流式纯文本+光标）；排坑见工程笔记（0.8.0 format() 带入块间空行/引用 `> ` 前缀/列表缩进）
+- [x] 22. **M2-008** 代码块高亮与回退（超长块不做一次性昂贵高亮）｜ 依赖：M2-007 ｜ 输出：富文本渲染
+  - 完成：`CodeHighlighter`（Highlightr 封装，串行队列收敛 JavaScriptCore 调用 + NSCache 缓存 + 超 10_000 字符熔断走等宽纯文本 + 未知语言/失败回退）+ CodeBlockView（语言小标/横向滚动/可选中）
+- [x] 23. **M2-009** 工具结果文本可选中（代码块/引用/列表/段落均保留选区能力；AppKit 选区层不与渲染层互覆）｜ 依赖：M2-002/008 ｜ 输出：B-M3 前置能力
+  - 完成：全部块级视图与 ToolCallCard 结果区 `.textSelection(.enabled)`；NSTextView 选区层未落地（归 M3-001），互覆检查随 M3-001 执行
+- [x] 24. **M2-010** SEC 全量测试 ｜ 依赖：M2-003~009 ｜ 输出：G2 证据
+  - 完成：缺口补齐（SEC-11 并发权限 fake agent 端到端 + 未知调用不绕过策略器 + 拒绝不死锁断言；SEC-01~03 放行面引用分类器/策略器单测与 fsrpc 样本）+ 真实 CLI 精简用例 `writeDeniedRealCLI`（写拒绝/文件未落盘/notice 入库/对话续行，TWIG_REAL_CLI=1 实测通过）→ `doc/G2-验收报告.md`（SEC-01~14 逐条证据 + §6.7 六条附加项）
 
-### Gate G2 安全测试矩阵（§6.4，不允许任何用例「暂时跳过」）
-- [ ] SEC-01 读普通文件 → 自动批准
-- [ ] SEC-02 列目录 → 自动批准
-- [ ] SEC-03 文本/代码搜索 → 自动批准
-- [ ] SEC-04 新建文件 → 自动拒绝
-- [ ] SEC-05 覆盖/追加文件 → 自动拒绝
-- [ ] SEC-06 编辑已有文件 → 自动拒绝
-- [ ] SEC-07 删除/移动/重命名 → 默认拒绝
-- [ ] SEC-08 执行任意终端命令 → 自动拒绝
-- [ ] SEC-09 未知工具类型 → 自动拒绝
-- [ ] SEC-10 权限请求缺分类字段 → 自动拒绝
-- [ ] SEC-11 多并发权限请求 → 各自独立正确响应
-- [ ] SEC-12 拒绝后模型继续回答 → 对话不断，标记可见
-- [ ] SEC-13 拒绝后应用重启 → 拒绝记录可回看
-- [ ] SEC-14 CLI 升级新增操作类型 → 不得默认批准
-- [ ] G2 附加：拒绝不死锁/不永久挂起；未知 ACP 事件不绕过策略器；工具卡片实时与重启后一致
+### Gate G2 安全测试矩阵（§6.4，不允许任何用例「暂时跳过」）✅ 已通过（2026-08-01，证据见 `doc/G2-验收报告.md`）
+- [x] SEC-01 读普通文件 → 自动批准
+- [x] SEC-02 列目录 → 自动批准
+- [x] SEC-03 文本/代码搜索 → 自动批准
+- [x] SEC-04 新建文件 → 自动拒绝
+- [x] SEC-05 覆盖/追加文件 → 自动拒绝
+- [x] SEC-06 编辑已有文件 → 自动拒绝
+- [x] SEC-07 删除/移动/重命名 → 默认拒绝
+- [x] SEC-08 执行任意终端命令 → 自动拒绝
+- [x] SEC-09 未知工具类型 → 自动拒绝
+- [x] SEC-10 权限请求缺分类字段 → 自动拒绝
+- [x] SEC-11 多并发权限请求 → 各自独立正确响应
+- [x] SEC-12 拒绝后模型继续回答 → 对话不断，标记可见
+- [x] SEC-13 拒绝后应用重启 → 拒绝记录可回看
+- [x] SEC-14 CLI 升级新增操作类型 → 不得默认批准
+- [x] G2 附加：拒绝不死锁/不永久挂起；未知 ACP 事件不绕过策略器；工具卡片实时与重启后一致
 
 ---
 
@@ -198,7 +202,7 @@
 | DEC-05 | 长背景压缩阈值 | 任务 29 定稿 | ADR/实现说明 |
 | DEC-06 | 摘要 session 策略 | 任务 29 前 | ADR/实现说明 |
 | DEC-07 | 锚点 start/length/hash | 任务 26 前 | ADR-003 + migration |
-| DEC-08 | Markdown/高亮库 | 任务 21 前 | ADR-002 |
+| DEC-08 | Markdown/高亮库 | ✅ 已关闭 | ADR-002 |
 | DEC-09 | 树同级排序 | 任务 44 前 | **免 ADR**，TODO 备注记录 |
 | DEC-10 | 多主线程操作集合 | 任务 45 前 | **免 ADR**，TODO 备注记录 |
 | DEC-11 | ACP 额度查询能力 | B-M5 评估时，不阻塞 MVP | 能力记录 |

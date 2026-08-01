@@ -18,7 +18,11 @@ let package = Package(
         // SDK 的 Transport/Client 协议要求 swift-log；显式声明直接依赖以便 import Logging。
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
         // 任务 M1-011：本地持久化（SQLite）。数据库存取只走 Repository 层（§5.4 核心约束）。
-        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1")
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.1"),
+        // ADR-002：Markdown 块级解析（Apple 官方，Apache-2.0）。
+        .package(url: "https://github.com/apple/swift-markdown.git", from: "0.7.0"),
+        // ADR-002：代码块语法高亮（highlight.js 内核，MIT + BSD-3）。
+        .package(url: "https://github.com/raspu/Highlightr.git", from: "2.3.0")
     ],
     targets: [
         .executableTarget(
@@ -43,7 +47,11 @@ let package = Package(
         ),
         .target(
             name: "Shared",
-            dependencies: [.product(name: "GRDB", package: "GRDB.swift")],
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Markdown", package: "swift-markdown"),
+                .product(name: "Highlightr", package: "Highlightr")
+            ],
             path: "Shared"
         ),
         .testTarget(

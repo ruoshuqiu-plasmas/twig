@@ -129,6 +129,57 @@ public enum FakeACPAgent {
     exit 0
     """
 
+    /// 并发权限流程（SEC-11）：同一 prompt 内连发两个 tool_call（read + edit）
+    /// 与两个 request_permission（id 1000/1001），各自独立读取响应写入 stderr，
+    /// 再回 chunk + end_turn——断言读放行、写拒绝互不影响，且对话正常收尾。
+    public static let permissionConcurrent = """
+    \(replyFn)
+    while IFS= read -r line; do
+      case "$line" in
+        *notifications/initialized* | *notifications\\\\/initialized*) : ;;
+        *\\"initialize\\"*)
+          reply "$line" '\(initializeResponse)' ;;
+        *\\"session/new\\"* | *\\"session\\\\/new\\"*)
+          reply "$line" '{"sessionId":"session_fake"}' ;;
+        *\\"session/prompt\\"* | *\\"session\\\\/prompt\\"*)
+          echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session_fake","update":{"sessionUpdate":"tool_call","toolCallId":"0:tool_read","title":"Read","kind":"read","status":"pending"}}}'
+          echo '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session_fake","update":{"sessionUpdate":"tool_call","toolCallId":"0:tool_write","title":"Write","kind":"edit","status":"pending"}}}'
+          echo '{"jsonrpc":"2.0","id":1000,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_read","title":"Read"}}}'
+          echo '{"jsonrpc":"2.0","id":1001,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_write","title":"Write"}}}'
+          IFS= read -r permresp1
+          echo "PERMRESP1:$permresp1" >&2
+          IFS= read -r permresp2
+          echo "PERMRESP2:$permresp2" >&2
+          echo '\(messageChunk)'
+          reply "$line" '{"stopReason":"end_turn"}' ;;
+      esac
+    done
+    exit 0
+    """
+
+    /// 未知调用权限流程（G2 附加：未知事件不绕过策略器）：request_permission
+    /// 引用从未广播过的 toolCallId 且 title 无法映射（SomeNewTool）——
+    /// 应分类 unknown → default deny 拒绝，且对话继续到 end_turn。
+    public static let permissionUnknownCall = """
+    \(replyFn)
+    while IFS= read -r line; do
+      case "$line" in
+        *notifications/initialized* | *notifications\\\\/initialized*) : ;;
+        *\\"initialize\\"*)
+          reply "$line" '\(initializeResponse)' ;;
+        *\\"session/new\\"* | *\\"session\\\\/new\\"*)
+          reply "$line" '{"sessionId":"session_fake"}' ;;
+        *\\"session/prompt\\"* | *\\"session\\\\/prompt\\"*)
+          echo '{"jsonrpc":"2.0","id":1000,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_ghost","title":"SomeNewTool"}}}'
+          IFS= read -r permresp
+          echo "PERMRESP:$permresp" >&2
+          echo '\(messageChunk)'
+          reply "$line" '{"stopReason":"end_turn"}' ;;
+      esac
+    done
+    exit 0
+    """
+
     /// 多 session 路由流程（M1-010）：session/new 按调用次序返回 sess_1/sess_2/…；
     /// prompt 从请求中提取 sessionId，回显归属该 session 的正文 chunk（text 为 `reply-<sid>`）。
     /// 首次 prompt 额外发一条无主 session（sess_ghost）事件，验证路由层保守记录、不串线、不崩溃。

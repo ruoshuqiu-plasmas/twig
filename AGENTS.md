@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M2 进行中（任务 20 完成，2026-08-01）：拒绝 notice 与持久化落地——拒绝/兜底取消一律广播 toolCallDenied，卡片即时收口 denied，对话流落 notice 可回看，设置页只读策略展示，91 测试全绿。** Gate G1 已通过（B-M1 收官，证据见 `doc/G1-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是 DEC-08（Markdown/高亮库选型 → ADR-002）与任务 21（M2-007）。
+**当前状态：B-M2 收官、Gate G2 已通过（2026-08-01）：DEC-08 拍板（ADR-002：Highlightr 代码高亮 + swift-markdown 块级解析 + SwiftUI 自渲染），Markdown/代码块/列表/引用块级渲染落地（超长块熔断、失败回退纯文本、全块可选中），SEC-01~14 逐条有证据（含真实 CLI 写拒绝精简验收），110 测试全绿，证据见 `doc/G2-验收报告.md`。** Gate G1 已通过（B-M1 收官，证据见 `doc/G1-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 25（M3-001，B-M3 支线开工；DEC-07 锚点字段决策须在任务 26 前关闭）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -23,8 +23,9 @@ doc/
   工程笔记.md                     排坑与可复用知识（swift-testing/GRDB/SDK 等实测坑，追加式）
 adr/
   ADR-001-acp-client-path.md     已定稿：采用 rebornix/acp-swift-sdk；含锁定版本基线、PoC 结论与回退触发条件
+  ADR-002-markdown-rendering.md  已定稿：Highlightr 代码高亮 + swift-markdown 块级解析 + SwiftUI 自渲染；含否决方案与回退触发条件
 Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标：App/Features/Core/Shared/SchemaPoC）
-Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1）
+Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1 + swift-markdown @ 0.8.0 + Highlightr @ 2.3.0）
 App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI）
 Features/   MainChat/（MainChatView, MainChatViewModel）Settings/（SettingsView 只读策略页）BranchPanel/ ConversationTree/（后两者占位）
 Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore, ToolCallTracker）
@@ -33,7 +34,7 @@ Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore, ToolC
             Branching/（BranchContextAssembler, BranchMergeService）
             Persistence/（AppDatabase, Migrations/, Repositories/）
             Conversation/（ConversationStore 主对话状态机, LiveConversationDriver）
-Shared/     Models/ UIComponents/ Logging/ TestSupport/
+Shared/     Models/ UIComponents/（ToolCallCard, MarkdownBlockView/CodeBlockView）Markdown/（MarkdownBlockParser, CodeHighlighter）Logging/ TestSupport/
 Tests/
   CoreTests/                     单元测试（swift-testing）；Fixtures/ 为 G0 脱敏样本提取件
 spike/
@@ -56,7 +57,7 @@ Core/       ACP/（Client/Transport/EventAdapter/SessionStore）
             Branching/（BranchContextAssembler, BranchMergeService）
             Persistence/（AppDatabase, Migrations, Repositories/）
             Conversation/（ConversationStore, LiveConversationDriver）
-Shared/     Models/ UIComponents/ Logging/ TestSupport/
+Shared/     Models/ UIComponents/ Markdown/ Logging/ TestSupport/
 ```
 
 ## 3. 构建与测试命令
@@ -75,7 +76,7 @@ python3 sanitize_samples.py     # raw/ + stderr 日志 → sanitized/，含敏�
 
 注意：探针会真实驱动 `~/.kimi-code/bin/kimi acp` 并**消耗会员额度**；prompt 均已最小化，重跑前先确认必要性。
 
-**Swift 工程**（Swift 6.3.3 + SPM，最低 macOS 14；技术栈：SwiftUI + AppKit 互操作、GRDB 7.11.1（任务 11 已引入）、acp-swift-sdk）：
+**Swift 工程**（Swift 6.3.3 + SPM，最低 macOS 14；技术栈：SwiftUI + AppKit 互操作、GRDB 7.11.1（任务 11 已引入）、acp-swift-sdk、swift-markdown 0.8.0 + Highlightr 2.3.0（ADR-002，任务 21/22 已引入））：
 
 ```bash
 swift build                 # 构建全部目标（App/Features/Core/Shared）

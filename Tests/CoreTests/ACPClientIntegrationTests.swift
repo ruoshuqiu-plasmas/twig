@@ -199,4 +199,92 @@ struct ACPClientIntegrationTests {
         #expect(initResult.agentInfo?.name == "fake-agent")
         await client.disconnect()
     }
+
+    @Test("SEC-11：并发权限请求各自独立正确响应（读放行、写拒绝），对话正常收尾不死锁")
+    func concurrentPermissions() async throws {
+        let stderr = StderrCollector()
+        let (client, _) = try await makeClient(agentBehavior: FakeACPAgent.permissionConcurrent, stderr: stderr)
+        let collector = EventCollector()
+        let collectTask = collectEvents(of: client, into: collector)
+
+        try await withTimeout(seconds: 10, operation: "connect") { try await client.connect() }
+        let sessionID = try await withTimeout(seconds: 10, operation: "newSession") {
+            try await client.newSession(cwd: "/tmp")
+        }
+        // prompt 能在超时内返回本身即「拒绝不死锁/不永久挂起」证据。
+        try await withTimeout(seconds: 10, operation: "prompt") {
+            try await client.prompt(sessionID: sessionID, text: "读一个写一个")
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let events = await collector.events
+        let permissionEvents = events.filter {
+            if case .permissionRequested = $0 { return true }
+            return false
+        }
+        #expect(permissionEvents.count == 2, "两个权限请求都应透明展示")
+
+        let stderrLines = await stderr.lines
+        // 响应按请求 id 区分：1000=read 应 allow_once，1001=write 应 reject。
+        let resp1000 = stderrLines.first { $0.contains(#""id":1000"#) }
+        let resp1001 = stderrLines.first { $0.contains(#""id":1001"#) }
+        #expect(resp1000?.contains(#""optionId":"approve_once""#) == true,
+                "id=1000（read）应批准，实际 \(resp1000 ?? "无")")
+        #expect(resp1001?.contains(#""optionId":"reject""#) == true,
+                "id=1001（write）应拒绝，实际 \(resp1001 ?? "无")")
+
+        // 拒绝后对话继续：正文 chunk 与 end_turn 都到达（SEC-12 对话不断）。
+        #expect(events.contains(.textDelta(sessionID: "session_fake", text: "你好")))
+        #expect(events.contains(.completed(sessionID: "session_fake", stopReason: "end_turn")))
+        // 只有写操作产生 denied。
+        let deniedEvents = events.filter {
+            if case .toolCallDenied = $0 { return true }
+            return false
+        }
+        #expect(deniedEvents.count == 1)
+
+        collectTask.cancel()
+        await client.disconnect()
+    }
+
+    @Test("G2 附加：未知工具调用（无前置 tool_call、title 无法映射）不绕过策略器，一律拒绝")
+    func unknownToolCallDenied() async throws {
+        let stderr = StderrCollector()
+        let (client, _) = try await makeClient(agentBehavior: FakeACPAgent.permissionUnknownCall, stderr: stderr)
+        let collector = EventCollector()
+        let collectTask = collectEvents(of: client, into: collector)
+
+        try await withTimeout(seconds: 10, operation: "connect") { try await client.connect() }
+        let sessionID = try await withTimeout(seconds: 10, operation: "newSession") {
+            try await client.newSession(cwd: "/tmp")
+        }
+        try await withTimeout(seconds: 10, operation: "prompt") {
+            try await client.prompt(sessionID: sessionID, text: "调用未知工具")
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let stderrLines = await stderr.lines
+        let permResp = stderrLines.first { $0.hasPrefix("PERMRESP:") }
+        #expect(permResp?.contains(#""optionId":"reject""#) == true,
+                "未知调用应拒绝，实际 \(permResp ?? "无")")
+
+        let events = await collector.events
+        let deniedEvent = events.first {
+            if case .toolCallDenied = $0 { return true }
+            return false
+        }
+        guard case .toolCallDenied(_, _, let operation, let noticeText) = deniedEvent else {
+            Issue.record("未知调用应广播 toolCallDenied，实际 \(events)")
+            collectTask.cancel()
+            await client.disconnect()
+            return
+        }
+        #expect(operation == .unknown)
+        #expect(noticeText == "未知操作已按保守策略拦截")
+        // 拒绝后 agent 继续作答至 end_turn，不死锁。
+        #expect(events.contains(.completed(sessionID: "session_fake", stopReason: "end_turn")))
+
+        collectTask.cancel()
+        await client.disconnect()
+    }
 }
