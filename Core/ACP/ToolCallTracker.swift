@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// 工具调用生命周期状态（任务 M2-001：requested→running→succeeded/failed/denied）。
 ///
@@ -145,5 +146,19 @@ public struct ToolCallTracker: Sendable {
         } else {
             records.append(record)
         }
+    }
+}
+
+extension Message {
+    /// 解码工具卡片摘要（``metadataJSON`` 存 ``ToolCallRecord`` JSON）。
+    /// 失败返回 nil——UI 回退纯文本渲染，不崩溃（保守容忍约束）。
+    ///
+    /// 放在 Core 层而非 Shared/Models：``ToolCallRecord`` 属 Core，
+    /// Shared 为底层模块不能反向依赖（偏离计划的落点，语义一致）。
+    public func toolCallRecord() -> ToolCallRecord? {
+        guard kind == .toolCall,
+              let metadataJSON,
+              let data = metadataJSON.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ToolCallRecord.self, from: data)
     }
 }

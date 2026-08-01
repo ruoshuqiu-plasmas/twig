@@ -141,6 +141,22 @@ public struct MessageRepository: Sendable {
         }
     }
 
+    /// 工具卡片整行更新（M2-002：content/metadata/status 一并落库，不追加）。
+    public func updateMetadata(
+        messageID: String,
+        content: String,
+        metadataJSON: String?,
+        status: MessageStatus,
+        at date: Date = Date()
+    ) throws {
+        try db.write { db in
+            try db.execute(
+                sql: "UPDATE messages SET content = ?, metadata_json = ?, status = ?, updated_at = ? WHERE id = ?",
+                arguments: [content, metadataJSON, status.rawValue, date, messageID]
+            )
+        }
+    }
+
     /// 状态流转（completed/interrupted/failed，§5.7）。
     public func updateStatus(messageID: String, status: MessageStatus, at date: Date = Date()) throws {
         try db.write { db in

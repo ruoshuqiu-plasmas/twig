@@ -56,12 +56,13 @@ public struct ConversationSnapshot: Sendable, Equatable {
 /// 职责：
 /// - 发送即存：user message 立即落库（completed），assistant 占位（streaming）；
 /// - delta 顺序追加到同一消息（内存即时 + 节流落库，终态强制落库）；
+/// - 工具事件聚合成 ``MessageKind/toolCall`` 卡片消息（M2-002，同节奏落库）；
 /// - 完成原子置 completed；中断保留已收内容置 interrupted；
 /// - 重试产生明确的新 assistant 消息与新请求，不静默重复扣费；
 /// - 跨线程路由：每线程独立消费循环按 session 绑定，UI 切换不影响后台线程写入
 ///   （G1-06 结构性保证；B-M1 仅提供切回活跃线程的 ``switchToThread(id:)``）。
 ///
-/// 不属本层：permission 决策（M2-005）、工具卡片渲染（B-M2）、中断的进程级接线（M1-013）。
+/// 不属本层：permission 决策（M2-005 策略器）、工具卡片渲染（Features 层）。
 public actor ConversationStore {
 
     private let threads: ThreadRepository
@@ -84,6 +85,12 @@ public actor ConversationStore {
         /// 尚未落库的 delta 缓冲（节流）。
         var pendingDelta = ""
         var lastFlush = Date.distantPast
+        /// 工具调用聚合器（M2-002：tool_call/update → 生命周期记录）。
+        var toolCallTracker = ToolCallTracker()
+        /// toolCallID → 对话流卡片消息 id（一次调用一条消息，就地更新）。
+        var toolCallMessageIDs: [String: String] = [:]
+        /// 已更新但尚未落库的工具卡片消息 id（与 delta 共用节流节奏）。
+        var pendingToolMessageIDs: Set<String> = []
         var consumptionTask: Task<Void, Never>?
     }
 
@@ -255,9 +262,13 @@ public actor ConversationStore {
 
     /// 中断当前线程的流式（M1-013 进程级路径与事件流终止均经此收口）。
     public func interrupt(threadID: String) {
-        guard var ctx = contexts[threadID], let messageID = ctx.streamingMessageID else { return }
-        finishStreaming(&ctx, messageID: messageID, status: .interrupted)
-        ctx.phase = .interrupted
+        guard var ctx = contexts[threadID] else { return }
+        if let messageID = ctx.streamingMessageID {
+            finishStreaming(&ctx, messageID: messageID, status: .interrupted)
+            ctx.phase = .interrupted
+        }
+        // 挂起的工具调用一并终态收口（M2-002）。
+        settlePendingToolCalls(&ctx, status: .interrupted)
         contexts[threadID] = ctx
         if threadID == activeThreadID { publish() }
     }
@@ -323,8 +334,7 @@ public actor ConversationStore {
             // 思考流不入正文（渲染归 B-M2 之后决策），仅保守记录类型。
             logger.debug("收到 thoughtDelta（不入正文）：thread=\(threadID.prefix(8))…")
         case .toolCallStarted, .toolCallUpdated:
-            // 工具卡片渲染归 B-M2，本阶段仅保守记录。
-            logger.debug("收到工具事件（B-M2 前不落库）：thread=\(threadID.prefix(8))…")
+            applyToolEvent(event, threadID: threadID)
         case .permissionRequested:
             // 响应由 ACPClient 的 default deny 处理（M2-005 接策略器），本层不重复决策。
             break
@@ -372,13 +382,15 @@ public actor ConversationStore {
 
     /// 事件流终止（子进程死亡/断开）：流式中的消息标记 interrupted，保留已收内容。
     private func streamEnded(threadID: String) {
-        guard contexts[threadID]?.streamingMessageID != nil else { return }
+        guard let ctx = contexts[threadID],
+              ctx.streamingMessageID != nil || !ctx.toolCallMessageIDs.isEmpty else { return }
         interrupt(threadID: threadID)
     }
 
     /// 终态收口：冲刷缓冲 + 落库状态 + 同步内存副本（completed/failed/interrupted 共用）。
     private func finishStreaming(_ ctx: inout ThreadContext, messageID: String, status: MessageStatus) {
         flushPending(&ctx)
+        flushPendingToolCalls(&ctx)
         let date = now()
         do {
             try messages.updateStatus(messageID: messageID, status: status, at: date)
@@ -402,6 +414,88 @@ public actor ConversationStore {
         } catch {
             logger.error("delta 落库失败，保留缓冲待重试（保守记录）：\(error.localizedDescription)")
         }
+    }
+
+    // MARK: - 工具事件接线（M2-002）
+
+    /// 工具事件 → 卡片消息：一次调用一条 ``MessageKind/toolCall`` 消息，
+    /// 首次创建、后续就地更新 content（结果摘要文本）与 metadataJSON（ToolCallRecord JSON）。
+    /// 落库节奏参照 ``appendDelta``：内存即时更新 + 节流落库 + 终态强制落库。
+    private func applyToolEvent(_ event: AgentEvent, threadID: String) {
+        guard var ctx = contexts[threadID],
+              let record = ctx.toolCallTracker.apply(event) else { return }
+        let date = now()
+        let content = record.contentText ?? record.title ?? ""
+        let metadata = Self.encodeToolMetadata(record)
+        if let messageID = ctx.toolCallMessageIDs[record.toolCallID],
+           let index = ctx.messages.firstIndex(where: { $0.id == messageID }) {
+            ctx.messages[index].content = content
+            ctx.messages[index].metadataJSON = metadata
+            ctx.messages[index].updatedAt = date
+            // 工具终态只反映到 metadata 的 record.status；消息状态统一 completed
+            // （卡片自绘状态徽标，不触发正文行的失败/重试徽标）。
+            if record.status.isTerminal {
+                ctx.messages[index].status = .completed
+            }
+            ctx.pendingToolMessageIDs.insert(messageID)
+        } else {
+            do {
+                let message = Message(
+                    id: UUID().uuidString, threadID: threadID, role: .assistant, kind: .toolCall,
+                    content: content, sequence: try messages.nextSequence(threadID: threadID),
+                    status: record.status.isTerminal ? .completed : .streaming,
+                    createdAt: date, updatedAt: date, metadataJSON: metadata
+                )
+                try messages.insert(message)
+                ctx.toolCallMessageIDs[record.toolCallID] = message.id
+                ctx.messages.append(message)
+            } catch {
+                logger.error("工具卡片消息落库失败（保守记录）：\(error.localizedDescription)")
+            }
+        }
+        if record.status.isTerminal || date.timeIntervalSince(ctx.lastFlush) >= flushInterval {
+            flushPendingToolCalls(&ctx)
+        }
+        contexts[threadID] = ctx
+        if threadID == activeThreadID { publish() }
+    }
+
+    /// 冲刷待落库的工具卡片更新（content + metadataJSON + status）；失败保留待重试（保守记录）。
+    private func flushPendingToolCalls(_ ctx: inout ThreadContext) {
+        let ids = ctx.pendingToolMessageIDs
+        guard !ids.isEmpty else { return }
+        ctx.pendingToolMessageIDs = []
+        for messageID in ids {
+            guard let message = ctx.messages.first(where: { $0.id == messageID }) else { continue }
+            do {
+                try messages.updateMetadata(
+                    messageID: messageID, content: message.content,
+                    metadataJSON: message.metadataJSON, status: message.status, at: message.updatedAt
+                )
+            } catch {
+                ctx.pendingToolMessageIDs.insert(messageID)
+                logger.error("工具卡片落库失败，保留待重试（保守记录）：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// 挂起工具调用的终态收口（中断/失败路径）：未达终态的卡片标记 status 并强制落库。
+    private func settlePendingToolCalls(_ ctx: inout ThreadContext, status: MessageStatus) {
+        for (callID, messageID) in ctx.toolCallMessageIDs {
+            guard let record = ctx.toolCallTracker.record(callID: callID),
+                  !record.status.isTerminal,
+                  let index = ctx.messages.firstIndex(where: { $0.id == messageID }) else { continue }
+            ctx.messages[index].status = status
+            ctx.messages[index].updatedAt = now()
+            ctx.pendingToolMessageIDs.insert(messageID)
+        }
+        flushPendingToolCalls(&ctx)
+    }
+
+    /// 工具摘要编码（不存完整 ACP SDK 对象，只存聚合后的 ``ToolCallRecord``）。
+    private static func encodeToolMetadata(_ record: ToolCallRecord) -> String? {
+        guard let data = try? JSONEncoder().encode(record) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// 最小错误分类（M1-013 出完整错误页面时再细化）：

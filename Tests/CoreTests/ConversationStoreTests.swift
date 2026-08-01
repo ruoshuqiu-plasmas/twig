@@ -305,4 +305,125 @@ struct ConversationStoreTests {
                "旧中断消息不改写，新轮次正常完成")
         #expect(stored.last?.content == "答")
     }
+
+    // MARK: - 工具事件接线（M2-002）
+
+    @Test("工具事件进对话流：首次建卡片消息，后续 update 就地更新同一条（kind/metadata 正确）")
+    func toolCallMessageLifecycle() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+        let call = ToolCallInfo(toolCallID: "0:tool_a", title: "Read", kind: "read", status: "pending")
+
+        driver.emit(sessionID: sessionID, .toolCallStarted(sessionID: sessionID, call: call))
+        try await waitFor("卡片消息创建") {
+            await store.currentSnapshot().messages.count == 3
+        }
+        let card = await store.currentSnapshot().messages.last
+        #expect(card?.kind == .toolCall)
+        #expect(card?.role == .assistant)
+        #expect(card?.status == .streaming)
+        #expect(card?.sequence == 3, "sequence 接在 user/assistant 占位之后")
+        #expect(card?.toolCallRecord()?.toolCallID == "0:tool_a")
+        #expect(card?.toolCallRecord()?.status == .requested)
+
+        // 稀疏 update：就地更新同一条消息，不新增。
+        let update = ToolCallInfo(toolCallID: "0:tool_a", status: "completed", contentText: "文件内容摘要")
+        driver.emit(sessionID: sessionID, .toolCallUpdated(sessionID: sessionID, call: update))
+        try await waitFor("终态落库") {
+            (try? messages.messages(threadID: threadID).last?.status) == .completed
+        }
+        #expect(await store.currentSnapshot().messages.count == 3, "update 不新增消息")
+
+        // 终态强制落库：content（结果摘要）与 metadata（record JSON）均已入库。
+        let stored = try messages.messages(threadID: threadID).last
+        #expect(stored?.content == "文件内容摘要")
+        let record = stored?.toolCallRecord()
+        #expect(record?.status == .succeeded)
+        #expect(record?.kind == "read" && record?.title == "Read", "稀疏合并保留先到的 kind/title")
+    }
+
+    @Test("乱序容忍：update 先于 started 到达也能建档；denied 派生（failed + rejected 文本）")
+    func toolCallOutOfOrderAndDenied() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+
+        // update 先至（G0 容忍规则：乱序也建档）。
+        let early = ToolCallInfo(toolCallID: "0:tool_b", status: "in_progress")
+        driver.emit(sessionID: sessionID, .toolCallUpdated(sessionID: sessionID, call: early))
+        try await waitFor("乱序建档") {
+            await store.currentSnapshot().messages.count == 3
+        }
+
+        let rejected = ToolCallInfo(
+            toolCallID: "0:tool_b", title: "Write", kind: "edit",
+            status: "failed", contentText: "Permission rejected by user"
+        )
+        driver.emit(sessionID: sessionID, .toolCallUpdated(sessionID: sessionID, call: rejected))
+        try await waitFor("denied 落库") {
+            (try? messages.messages(threadID: threadID).last?.status) == .completed
+        }
+        let record = try messages.messages(threadID: threadID).last?.toolCallRecord()
+        #expect(record?.status == .denied, "failed 且文本含 rejected 派生 denied")
+    }
+
+    @Test("中断收口：挂起的工具调用随流式中断一并终态标记 interrupted 并落库")
+    func toolCallInterruptedWithStream() async throws {
+        let (store, driver, messages, _) = try await makeStore()
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+
+        let call = ToolCallInfo(toolCallID: "0:tool_c", title: "Bash", kind: "execute", status: "in_progress")
+        driver.emit(sessionID: sessionID, .toolCallStarted(sessionID: sessionID, call: call))
+        try await waitFor("卡片消息创建") {
+            await store.currentSnapshot().messages.count == 3
+        }
+
+        await store.interruptAllStreaming()
+
+        let stored = try messages.messages(threadID: threadID)
+        #expect(stored[1].status == .interrupted, "正文占位 interrupted")
+        #expect(stored[2].status == .interrupted, "挂起的工具卡片一并终态收口")
+        #expect(stored[2].toolCallRecord()?.status == .running, "record 保留协议侧最后状态")
+    }
+
+    @Test("重启重读：新 Store 从库中恢复工具卡片（可回看，SEC-13 数据面）")
+    func toolCallSurvivesReopen() async throws {
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let driver = FakeDriver()
+        let store = ConversationStore(threads: threads, messages: messages, driver: driver, flushInterval: 0)
+        try await store.openMostRecentOrCreate(projectRoot: "/tmp")
+        try await store.send(text: "问")
+        let threadID = await store.currentSnapshot().threadID!
+        let sessionID = driver.sessions[0].sessionID
+
+        let call = ToolCallInfo(toolCallID: "0:tool_d", title: "Read", kind: "read", status: "completed",
+                                contentText: "结果", paths: ["/tmp/a.txt"])
+        driver.emit(sessionID: sessionID, .toolCallStarted(sessionID: sessionID, call: call))
+        try await waitFor("终态落库") {
+            (try? messages.messages(threadID: threadID).last?.status) == .completed
+        }
+
+        // 模拟重启：新 driver + 新 Store，同一库。
+        let newDriver = FakeDriver()
+        let newStore = ConversationStore(threads: threads, messages: messages, driver: newDriver, flushInterval: 0)
+        try await newStore.openMostRecentOrCreate(projectRoot: "/tmp")
+
+        let snapshot = await newStore.currentSnapshot()
+        #expect(snapshot.threadID == threadID)
+        let card = snapshot.messages.last
+        #expect(card?.kind == .toolCall)
+        let record = card?.toolCallRecord()
+        #expect(record?.status == .succeeded)
+        #expect(record?.paths == ["/tmp/a.txt"])
+    }
 }

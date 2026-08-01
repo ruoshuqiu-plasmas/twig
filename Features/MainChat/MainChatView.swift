@@ -102,12 +102,28 @@ private struct MessageRow: View {
             Text(roleTitle)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            content
+            statusBadge
+        }
+    }
+
+    /// 工具调用渲染为折叠卡片（M2-002）；metadata 解码失败回退纯文本，不崩溃。
+    @ViewBuilder
+    private var content: some View {
+        if message.kind == .toolCall, let record = message.toolCallRecord() {
+            ToolCallCard(
+                title: record.title ?? "工具调用",
+                status: record.status.rawValue,
+                kind: record.kind,
+                paths: record.paths ?? [],
+                content: record.contentText ?? message.content
+            )
+        } else {
             Text(displayContent)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(8)
                 .background(background, in: RoundedRectangle(cornerRadius: 8))
-            statusBadge
         }
     }
 
