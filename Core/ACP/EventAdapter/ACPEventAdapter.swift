@@ -67,6 +67,7 @@ public struct ACPEventAdapter: Sendable {
     }
 
     /// 聚合 content 数组中的文本片段；diff/terminal 以占位摘要表达（卡片渲染在 M2-002）。
+    /// G0 实测：每次 update 的 text 为累积快照（全量前缀），``ToolCallTracker`` 按替换合并。
     private static func aggregateText(_ contents: [ToolCallContent]) -> String? {
         var parts: [String] = []
         for content in contents {

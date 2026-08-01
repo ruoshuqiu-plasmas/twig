@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：Gate G1 通过，B-M1 收官（任务 14 完成，2026-08-01，G1 证据见 `doc/G1-验收报告.md`）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；主对话闭环、中断恢复、三态错误页均已落地，57 测试全绿，另有 `TWIG_REAL_CLI=1` 才执行的真实 CLI 集成验收套件）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 15（M2-001）：工具事件领域模型（B-M2 开始）。
+**当前状态：B-M2 进行中（任务 15 完成，2026-08-01）：工具事件领域模型落地，67 测试全绿。** Gate G1 已通过（B-M1 收官，证据见 `doc/G1-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 16（M2-002）：工具调用折叠卡片。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -27,7 +27,7 @@ Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标
 Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1）
 App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI）
 Features/   MainChat/（MainChatView, MainChatViewModel）BranchPanel/ ConversationTree/ Settings/（后三者占位）
-Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore）
+Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore, ToolCallTracker）
             Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
             Branching/（BranchContextAssembler, BranchMergeService）
