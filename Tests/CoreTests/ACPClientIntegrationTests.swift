@@ -78,7 +78,7 @@ struct ACPClientIntegrationTests {
         #expect(finalState == .stopped)
     }
 
-    @Test("permission 请求：事件透明展示 + 默认 default deny（cancelled）")
+    @Test("permission 请求：事件透明展示 + 策略器规范拒绝（selected + reject optionId）")
     func permissionDefaultDeny() async throws {
         let stderr = StderrCollector()
         let (client, _) = try await makeClient(agentBehavior: FakeACPAgent.permission, stderr: stderr)
@@ -106,13 +106,22 @@ struct ACPClientIntegrationTests {
             return
         }
         #expect(data.toolCallID == "0:tool_fake")
-        #expect(data.options.count == 2)
+        #expect(data.options.count == 3, "options 三档与真实样本一致")
+
+        // 策略链路：tool_call 的 kind=edit → writeFile → default deny（规范拒绝，
+        // 从 options 按 kind=reject_once 选取，optionId 不硬编码）。
+        let rejectOption = data.options.first { $0.kind == "reject_once" }
+        #expect(rejectOption != nil)
 
         // fake agent 把收到的响应写进了 stderr。
         let stderrLines = await stderr.lines
         let permResp = stderrLines.first { $0.hasPrefix("PERMRESP:") }
-        #expect(permResp?.contains(#""outcome":"cancelled""#) == true,
-                "默认应 default deny（cancelled），实际 \(permResp ?? "无")")
+        #expect(permResp?.contains(#""outcome":"selected""#) == true,
+                "写操作应回规范拒绝（selected），实际 \(permResp ?? "无")")
+        if let rejectOption {
+            #expect(permResp?.contains(#""optionId":"\#(rejectOption.optionID)""#) == true,
+                    "应选中 reject_once 选项，实际 \(permResp ?? "无")")
+        }
 
         collectTask.cancel()
         await client.disconnect()

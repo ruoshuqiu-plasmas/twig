@@ -82,7 +82,7 @@ public struct PermissionRequestData: Sendable, Equatable, Hashable {
     }
 }
 
-/// 权限决策（由 PermissionPolicyEngine 产生，M2-005 接入；适配层默认 ``cancelled``）。
+/// 权限决策（由 PermissionPolicyEngine 产生，M2-005 已接入；无法给出规范响应时兜底 ``cancelled``）。
 public enum PermissionDecision: Sendable, Equatable, Hashable {
     /// 选中某个选项（如 reject / approve_once）。
     case selected(optionID: String)

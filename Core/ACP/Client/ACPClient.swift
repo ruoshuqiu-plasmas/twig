@@ -8,20 +8,24 @@ import Logging
 /// 职责：握手（含 supervisor 状态联动）、session 创建、prompt 发送、
 /// session/update 通知 → ``AgentEvent`` 适配广播、permission 请求路由。
 ///
-/// permission 路由（§5.6）：请求只进入 ``permissionHandler``——M2-005 起由
-/// PermissionPolicyEngine 接管；此前为 **default deny**（第一阶段绝对只读，未知一律拒绝）。
+/// permission 路由（§5.6）：请求只进入策略链路——M2-005 起默认由
+/// PermissionPolicyEngine 接管（第一阶段绝对只读，未知一律拒绝）；
+/// ``permissionHandler`` 可替换（测试注入），替换后内置链路不再生效。
 public actor ACPClient {
 
-    /// permission 决策入口。M2-005 接入策略器；默认 default deny（cancelled）。
-    public var permissionHandler: @Sendable (PermissionRequestData) async -> PermissionDecision = { _ in
-        .cancelled
-    }
+    /// permission 决策入口（可替换，测试注入）。为 nil 时走内置
+    /// ToolOperationClassifier → PermissionPolicyEngine 默认链路（M2-005）。
+    public var permissionHandler: (@Sendable (PermissionRequestData) async -> PermissionDecision)?
 
     private let supervisor: ACPProcessSupervisor
     private let client: Client
     private let adapter: ACPEventAdapter
+    private let policyEngine = PermissionPolicyEngine()
     private let logger: Logger
     private var eventContinuations: [UUID: AsyncStream<AgentEvent>.Continuation] = [:]
+    /// 每 session 的工具调用聚合（permission 请求自身不带 kind，须按 toolCallId
+    /// 关联查 kind——G0 实测时序：tool_call 先、request_permission 后）。
+    private var toolTrackers: [String: ToolCallTracker] = [:]
 
     public init(
         supervisor: ACPProcessSupervisor,
@@ -53,6 +57,7 @@ public actor ACPClient {
 
         await client.onNotification(SessionUpdateNotification.self) { [adapter] message in
             let event = adapter.map(message.params)
+            await self.recordToolEvent(event)
             await self.broadcast(event)
         }
         await client.onRequest(RequestPermission.self) { request in
@@ -65,7 +70,12 @@ public actor ACPClient {
                 }
             )
             await self.broadcast(.permissionRequested(data))
-            let decision = await self.permissionHandler(data)
+            let decision: PermissionDecision
+            if let handler = await self.permissionHandler {
+                decision = await handler(data)
+            } else {
+                decision = await self.defaultPermissionDecision(data)
+            }
             let outcome: RequestPermission.Outcome = switch decision {
             case .selected(let optionID): .selected(optionID)
             case .cancelled: .cancelled
@@ -138,5 +148,31 @@ public actor ACPClient {
         for continuation in eventContinuations.values {
             continuation.yield(event)
         }
+    }
+
+    // MARK: - permission 策略链路（M2-005）
+
+    /// 工具事件进内部聚合器（供 permission 回调按 toolCallId 查 kind；非工具事件忽略）。
+    private func recordToolEvent(_ event: AgentEvent) {
+        guard let sessionID = event.sessionID else { return }
+        toolTrackers[sessionID, default: ToolCallTracker()].apply(event)
+    }
+
+    /// 内置默认链路：分类 → 策略器决策 → 脱敏日志 → 拒绝时对内部 tracker 标记 denied。
+    private func defaultPermissionDecision(_ data: PermissionRequestData) -> PermissionDecision {
+        let kind = data.toolCallID.flatMap { toolTrackers[data.sessionID]?.record(callID: $0)?.kind }
+        let operation = ToolOperationClassifier.classify(kind: kind, title: data.toolTitle)
+        let outcome = policyEngine.decide(operation: operation, options: data.options)
+        logger.info("permission 决策：操作=\(operation.rawValue)，原因=\(outcome.reason)")
+        if let callID = data.toolCallID, Self.isRejection(outcome.decision, options: data.options) {
+            toolTrackers[data.sessionID, default: ToolCallTracker()].markDenied(callID: callID)
+        }
+        return outcome.decision
+    }
+
+    /// 决策是否为规范拒绝（选中 kind=reject_once 的选项；optionId 不硬编码）。
+    private static func isRejection(_ decision: PermissionDecision, options: [PermissionRequestData.Option]) -> Bool {
+        guard case .selected(let optionID) = decision else { return false }
+        return options.first(where: { $0.optionID == optionID })?.kind == "reject_once"
     }
 }

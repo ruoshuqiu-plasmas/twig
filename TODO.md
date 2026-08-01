@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**任务 15 已完成**（ToolCallTracker 工具生命周期聚合，67 测试全绿）——下一项 `16. M2-002` 工具调用折叠卡片（依赖 M2-001，已就绪）
+**▶ 当前进度**：**任务 19 已完成**（16~19 一次做完：工具折叠卡片接线与持久化 + 权限分类/策略器/ACP 接入，84 测试全绿）——下一项 `20. M2-006` 拒绝 notice 与持久化（依赖 M2-002/005，已就绪）
 
 ---
 
@@ -81,10 +81,14 @@
 
 - [x] 15. **M2-001** 工具事件领域模型（requested→running→succeeded/failed/denied，稳定 call id 关联）｜ 依赖：M1-009 ｜ 输出：工具生命周期
   - 完成：`ToolCallStatus`/`ToolCallRecord`/`ToolCallTracker`（稀疏合并、累积快照替换、单调状态、denied 派生含 markDenied 显式口），9 用例全绿；协议事实（累积快照/无 denied 状态）已补记 g0-findings §4
-- [ ] 16. **M2-002** 工具调用折叠卡片（工具名/参数摘要/状态/结果摘要；大结果默认折叠；可持久化回看）｜ 依赖：M2-001 ｜ 输出：折叠 UI
-- [ ] 17. **M2-003** 权限类型映射（协议工具/权限类型 → 内部操作分类，基于真实样本）｜ 依赖：M1-004 ｜ 输出：映射表
-- [ ] 18. **M2-004** PermissionPolicyEngine（allowlist 仅读文件/列目录/搜索；其余一律默认拒绝，含未知与无法解析）｜ 依赖：M2-003 ｜ 输出：allowlist/default deny
-- [ ] 19. **M2-005** ACP permission 响应接入（回调只进策略器，返回合规批准/拒绝响应）｜ 依赖：M2-004 ｜ 输出：实际批准/拒绝
+- [x] 16. **M2-002** 工具调用折叠卡片（工具名/参数摘要/状态/结果摘要；大结果默认折叠；可持久化回看）｜ 依赖：M2-001 ｜ 输出：折叠 UI
+  - 完成：ConversationStore 接线（ToolCallTracker 进 ThreadContext，一次调用一条 kind=tool_call 消息，record JSON 入 metadata_json，节流+终态强制落库，中断一并收口）+ ToolCallCard（五态徽标配色、路径摘要、超 400 字默认折叠）+ MessageRow 按 kind 分支渲染（解码失败回退纯文本）
+- [x] 17. **M2-003** 权限类型映射（协议工具/权限类型 → 内部操作分类，基于真实样本）｜ 依赖：M1-004 ｜ 输出：映射表
+  - 完成：`ToolOperationClassifier`（七类操作；kind 优先 read/edit/execute，title 兜底 Read/Write/Bash/Edit/Terminal，映射来源注明 perms/terminal 脱敏样本；未知 kind→unknown、字段全缺→unparseable）
+- [x] 18. **M2-004** PermissionPolicyEngine（allowlist 仅读文件/列目录/搜索；其余一律默认拒绝，含未知与无法解析）｜ 依赖：M2-003 ｜ 输出：allowlist/default deny
+  - 完成：纯函数 `decide(operation:options:)`（allowlist 选 allow_once、其余选 reject_once 回 selected+optionId，缺档兜底 cancelled；决策带脱敏 reason）；SEC-04~11/14 单测逐条覆盖
+- [x] 19. **M2-005** ACP permission 响应接入（回调只进策略器，返回合规批准/拒绝响应）｜ 依赖：M2-004 ｜ 输出：实际批准/拒绝
+  - 完成：ACPClient 内置「per-session ToolCallTracker 查 kind → Classifier → PolicyEngine」默认链路（拒绝时 markDenied；permissionHandler 仍可注入替换）；fake agent 集成测试验证 Write 回 selected+reject optionId（optionId 不硬编码）
 - [ ] 20. **M2-006** 拒绝 notice 与持久化（对话流标注「已按只读策略拦截」；设置页只展示不修改）｜ 依赖：M2-002/005 ｜ 输出：透明展示
 - [ ] ⬦ DEC-08：Markdown/高亮库选型（Splash vs Highlightr；依据：SwiftUI 集成/增量性能/语言覆盖/维护/许可证）→ ADR-002（B-M2 前半关闭）
 - [ ] 21. **M2-007** Markdown 渲染方案验证（流式先保可见，稳定片段再解析；解析失败回退纯文本）｜ 依赖：M1-012 ｜ 输出：ADR-002

@@ -31,8 +31,15 @@ public enum FakeACPAgent {
     {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session_fake","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"你好"}}}}
     """
 
+    /// 权限请求前的 tool_call 事件（G0 实测时序：tool_call 先、request_permission 后；
+    /// 策略链路按 toolCallId 关联此处的 kind 分类）。
+    private static let toolCallStart = """
+    {"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"session_fake","update":{"sessionUpdate":"tool_call","toolCallId":"0:tool_fake","title":"Write","kind":"edit","status":"pending"}}}
+    """
+
+    /// options 三档与真实样本一致（perms/terminal 脱敏样本：approve_once/approve_always/reject）。
     private static let permissionRequest = """
-    {"jsonrpc":"2.0","id":1000,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_fake","title":"Write"}}}
+    {"jsonrpc":"2.0","id":1000,"method":"session/request_permission","params":{"sessionId":"session_fake","options":[{"optionId":"approve_once","name":"Approve once","kind":"allow_once"},{"optionId":"approve_always","name":"Approve for this session","kind":"allow_always"},{"optionId":"reject","name":"Reject","kind":"reject_once"}],"toolCall":{"toolCallId":"0:tool_fake","title":"Write"}}}
     """
 
     /// 标准流程：initialize / session/new / prompt（思考 chunk + 正文 chunk + end_turn）。
@@ -57,8 +64,9 @@ public enum FakeACPAgent {
     exit 0
     """
 
-    /// 权限流程：prompt 时先发 request_permission（agent→client 请求，id 1000），
-    /// 读取客户端响应写入 stderr（PERMRESP: 前缀），再回 chunk + end_turn。
+    /// 权限流程：prompt 时先发 tool_call（kind=edit）再发 request_permission（agent→client
+    /// 请求，id 1000，G0 实测时序），读取客户端响应写入 stderr（PERMRESP: 前缀），
+    /// 再回 chunk + end_turn。
     public static let permission = """
     \(replyFn)
     while IFS= read -r line; do
@@ -69,6 +77,7 @@ public enum FakeACPAgent {
         *\\"session/new\\"* | *\\"session\\\\/new\\"*)
           reply "$line" '{"sessionId":"session_fake"}' ;;
         *\\"session/prompt\\"* | *\\"session\\\\/prompt\\"*)
+          echo '\(toolCallStart)'
           echo '\(permissionRequest)'
           IFS= read -r permresp
           echo "PERMRESP:$permresp" >&2
