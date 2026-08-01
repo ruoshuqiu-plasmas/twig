@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Logging
 import Core
 import Features
 
@@ -60,6 +61,7 @@ struct BranchConversationApp: App {
             // 先显式环境检测：三类失败走各自引导页（G1-02/03/04），不崩不混。
             let probe = await env.supervisor.checkEnvironment()
             if let issue = StartupIssue(probeResult: probe) {
+                Logger(label: "twig.app").info("环境检测未通过，进入引导页：\(String(describing: issue))")
                 startupIssue = issue
                 return
             }
