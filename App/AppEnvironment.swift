@@ -32,11 +32,16 @@ public final class AppEnvironment: @unchecked Sendable {
 
     /// 生产装配：文件库（Application Support）+ 真实 CLI。
     public static func make(logger: Logger = Logger(label: "twig.app")) throws -> AppEnvironment {
+        // `TWIG_HOME`：验收/测试用 home 覆盖（G1-02/03/04 需要可重复构造缺失/旧版本/未登录环境；
+        // macOS 的 homeDirectoryForCurrentUser 不吃 HOME 环境变量）。生产启动不要设置。
+        let home = ProcessInfo.processInfo.environment["TWIG_HOME"]
+            .map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser
         let database = try AppDatabase.makeDefault()
         let threads = ThreadRepository(database)
         let supervisor = ACPProcessSupervisor(
             configuration: SupervisorConfiguration(
-                homeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+                homeDirectory: home,
                 onStderrLine: { line in
                     // CLI 日志走 stderr（G0 实测）；脱敏：按需再落，默认只记长度。
                     Logger(label: "twig.cli.stderr").debug("cli stderr 行（长度 \(line.count)）")

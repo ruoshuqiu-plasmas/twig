@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M1 恢复路径已落地（任务 13 完成，2026-08-01）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层，Supervisor/ACP adapter/SessionStore/GRDB 持久化/主对话状态机与流式 UI/中断恢复与三态错误页均已实现，57 测试全绿）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 14（M1-014）：B-M1 自动与手工验收（Gate G1）。
+**当前状态：Gate G1 通过，B-M1 收官（任务 14 完成，2026-08-01，G1 证据见 `doc/G1-验收报告.md`）。** 仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；主对话闭环、中断恢复、三态错误页均已落地，57 测试全绿，另有 `TWIG_REAL_CLI=1` 才执行的真实 CLI 集成验收套件）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 15（M2-001）：工具事件领域模型（B-M2 开始）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -135,7 +135,7 @@ swift package resolve       # 解析/更新依赖
 
 1. **单元测试**（swift-testing）：PermissionPolicyEngine、BranchContextAssembler、BranchMergeService、ACP event adapter、session 路由、树构建（含孤儿/环检测）、锚点定位、migration、消息状态机。
 2. **ACP 测试替身**：以 `spike/samples/sanitized/` 的脱敏样本为 fixtures 建立 fake ACP process，可脚本化流式、工具事件、各类 permission、malformed message、子进程中途退出、多 session 交错等。替身用于稳定回归，**不能替代真实 CLI 验证**。
-3. **真实 CLI 集成测试**：每个 Gate 至少一次，RC 前全量（真实写/终端权限拒绝、播种、嵌套、回流、子进程重启、session 恢复）。消耗会员额度，重跑前先确认必要性。
+3. **真实 CLI 集成测试**：每个 Gate 至少一次，RC 前全量（真实写/终端权限拒绝、播种、嵌套、回流、子进程重启、session 恢复）。消耗会员额度，重跑前先确认必要性。常驻套件 `RealCLIIntegrationTests` 仅当 `TWIG_REAL_CLI=1` 时执行（`swift test` 默认全量跑不会触发额度消耗）。
 4. **UI 测试**：自动化或可重复手工脚本。
 
 **不得跳过的测试矩阵**：SEC-01~14（只读安全，G2 不允许任何"暂时跳过"）、BR-01~18（支线）、TREE/THREAD/REC（B-M4），见 TODO.md 各 Gate 节。`swift test` 始终全量跑，天然覆盖跨阶段回归。
