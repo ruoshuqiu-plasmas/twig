@@ -33,6 +33,7 @@
 ## 4. 工具调用与权限（M1-004，支撑 B-M2 策略器设计）
 
 - 工具事件：`tool_call`（含 `toolCallId`、`title`、`kind`、`status=pending`）→ 多条 `tool_call_update`（大量 `in_progress` 稀疏更新，字段可空，适配层须容忍）→ 终态 `completed`/`failed`。call id 形如 `0:tool_xxx`，稳定可关联。
+- **update 的 content 文本为累积快照（2026-08-01 复查样本确认）**：每次 update 携带全量前缀而非增量（`{` → `{"path": "` → …），合并语义=最新替换；`kind`/`title` 可能中途才随 update 出现。协议无 `denied` 状态，拒绝的调用终态为 `failed` 且文本含 "rejected"（`ToolCallTracker` 据此派生 denied）。
 - **权限三分行为（实测）**：
   | 操作 | tool kind | 是否触发 `session/request_permission` |
   |---|---|---|

@@ -37,7 +37,8 @@ public struct ToolCallInfo: Sendable, Equatable, Hashable {
     public var title: String?
     public var kind: String?
     public var status: String?
-    /// 本次事件中携带的文本内容片段（tool_call_update 的流式增量或终态结果摘要）。
+    /// 本次事件中携带的文本内容（G0 实测：tool_call_update 为**累积快照**而非增量，
+    /// 合并语义见 ``ToolCallTracker``；终态时为结果摘要）。
     public var contentText: String?
     /// 关联文件路径（locations）。
     public var paths: [String]?
