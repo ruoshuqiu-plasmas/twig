@@ -35,7 +35,7 @@
 
 | 组件 | 版本 |
 |---|---|
-| Kimi Code CLI | **0.31.0**（`~/.kimi-code/bin/kimi`） |
+| Kimi Code CLI | **0.31.0**（G0 锁定基线）；**0.31.1** 已于 M4/RC 实测通过（`session/load` 两处行为差异由客户端 `TwigSessionLoad` 吸收，见矩阵第三行与 `spike/g0-findings.md` §2 补记） |
 | ACP 协议 | **v1**（`protocolVersion=1`） |
 | agent 侧协议栈 | @agentclientprotocol/sdk@0.23.0（kimi 内置） |
 | 客户端 SDK | rebornix/acp-swift-sdk @ commit `b800b3f`（上游无 release tag，PoC 通过后锁定，2026-07-31） |
@@ -53,3 +53,4 @@
 |---|---|---|---|---|---|---|---|---|
 | g0-spike（Python 探针） | 0.31.0 | ACP v1 / sdk@0.23.0 | ✓（含版本回落） | ✓（new/load/resume/list） | ✓（thought+message chunk） | ✓（edit/execute 可拒，read 免审批） | ✓（load 异步重放） | 通过 2026-07-31 |
 | m1-007-poc（acp-swift-sdk @ b800b3f，离线解码脱敏样本） | 0.31.0（样本来源） | ACP v1 / sdk@0.23.0 | ✓（sessionCapabilities{list,resume} 可解码） | ✓（sessionId；configOptions 未建模为已知缺口） | ✓（thought chunk；tool_call_update 稀疏字段容忍） | 未测（待 M2-005 真实链路） | 未测（待 M4-010） | 通过 2026-07-31 |
+| twig rc-1（acp-swift-sdk @ b800b3f + 自定义 TwigSessionLoad） | **0.31.1** | ACP v1 / sdk@0.23.0 | ✓ | ✓（new/load/list；load 经 TwigSessionLoad 绕过 0.31.1 两处不兼容：`mcpServers` 必填、成功响应无 `sessionId`） | ✓ | ✓（写/终端 default deny 真实拒绝，文件未落盘） | ✓（load 异步重放续接成功；不可用明确降级新建） | 通过 2026-08-02（证据 `doc/RC-验收报告.md` §三） |

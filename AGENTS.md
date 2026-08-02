@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M4 收官、Gate G4 已通过（2026-08-02）：DEC-09/10 关闭（同级最近活动降序；多线程最低集合+重命名），左栏对话树（环/孤儿保护/折叠/卡片信息）+ 树→标签→回跳联动 + 多主线程（创建/列表/切换/重命名/自动标题）+ 跨线程流式隔离 + 启动恢复与 session/load 续接四态（自定义 TwigSessionLoad 绕过 SDK 不兼容）全落地，TREE/THREAD/REC 逐条有证据（fake 全量 + 真实 CLI REC-01/02），236 测试全绿，证据见 `doc/G4-验收报告.md`。** Gate G1/G2/G3 已通过（证据见 `doc/G1-验收报告.md`、`doc/G2-验收报告.md`、`doc/G3-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002/003、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 50（M4-012，全量回归与候选构建 RC 冻结）。
+**当前状态：任务 50（M4-012，RC）自动化部分已完成（2026-08-02）：RC 六项冻结核对完毕，fake 238/238 全绿，真实 CLI 6/6 全过（CLI 0.31.1，兼容矩阵已补 0.31.1 行），候选构建归档 `dist/twig-rc-1/`（release 二进制 + MANIFEST，启动冒烟过），证据见 `doc/RC-验收报告.md`；待用户按报告 §七完成 GUI 验收（§16 演示脚本 16 步）后勾选 Gate RC 清单收官第一阶段。** Gate G1/G2/G3/G4 已通过（证据见 `doc/G1~G4-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002/003、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -18,6 +18,7 @@
 ```
 TODO.md                          线性执行清单：50 个任务 + G0~G4/RC 门槛 + DEC 决策点，逐项勾选（唯一执行面）
 doc/
+  G1~G4/RC-验收报告.md           各 Gate 与 RC 的逐条验收证据（RC 含冻结清单、回归记录、GUI 验收脚本、构建归档信息）
   分支对话面板-开发文档.md        产品定位、需求、技术选型、数据模型（v1.0 定稿，"已确认"决策不得擅改）
   分支对话面板-开发流程.md        设计规格（v1.1 起流程仪式降为参考，见文首说明；§5~§8 技术设计与测试矩阵仍有效）
   工程笔记.md                     排坑与可复用知识（swift-testing/GRDB/SDK 等实测坑，追加式）
@@ -94,7 +95,7 @@ swift package resolve       # 解析/更新依赖
 
 | 组件 | 版本 |
 |---|---|
-| Kimi Code CLI | **0.31.0**（`~/.kimi-code/bin/kimi`） |
+| Kimi Code CLI | **0.31.0**（G0 基线）/ **0.31.1**（M4 起实测，session/load 差异见下）（`~/.kimi-code/bin/kimi`） |
 | ACP 协议 | **v1**（`protocolVersion=1`） |
 | agent 侧协议栈 | @agentclientprotocol/sdk@0.23.0（kimi 内置） |
 | 客户端 SDK | rebornix/acp-swift-sdk @ commit `b800b3f`（任务 07 PoC 通过；上游无 release tag，待 1.0.0 发布转语义版本） |
