@@ -4,7 +4,8 @@ import GRDB
 /// 领域模型与 GRDB 记录类型（任务 M1-011）。
 ///
 /// 表结构依据开发文档 §4.4（核心四表）+ 流程文档 §5.8（工程字段）。
-/// 锚点字段（anchor_start/length/hash）待 DEC-07 关闭后再加，届时新增 migration。
+/// 锚点坐标字段（anchor_start/length/hash）已随 DEC-07 关闭落地
+/// （ADR-003，migration v2-anchor-coordinates，任务 M3-002）。
 ///
 /// 核心约束：不把完整 ACP SDK 对象序列化进库——需要保留的协议扩展信息
 /// 一律以摘要形式进 ``Message/metadataJSON``。
@@ -141,6 +142,13 @@ public struct Branch: Codable, FetchableRecord, PersistableRecord, Sendable, Equ
     /// 「从哪段文字长出」：锚点消息 + 引文（树→原文回跳，B-M3/B-M4）。
     public var anchorMessageID: String?
     public var anchorQuote: String
+    /// 锚点坐标（DEC-07 / ADR-003，nullable）：相对锚点消息**渲染后纯文本**
+    /// （非原始 markdown 源）的 Character 偏移；创建与解析约定见 AnchorResolver。
+    public var anchorStart: Int?
+    public var anchorLength: Int?
+    /// 锚点消息渲染后纯文本的 SHA256 前 16 位 hex（CryptoKit），
+    /// 用于检测原文是否变化，决定坐标/引文是否可信。
+    public var anchorContextHash: String?
     /// 注入支线新 session 的首条背景（BranchContextAssembler 产物，B-M3）。
     public var seedContext: String?
     public var status: BranchStatus
@@ -156,6 +164,9 @@ public struct Branch: Codable, FetchableRecord, PersistableRecord, Sendable, Equ
         acpSessionID: String? = nil,
         anchorMessageID: String? = nil,
         anchorQuote: String,
+        anchorStart: Int? = nil,
+        anchorLength: Int? = nil,
+        anchorContextHash: String? = nil,
         seedContext: String? = nil,
         status: BranchStatus = .open,
         mergeNoteID: String? = nil,
@@ -168,6 +179,9 @@ public struct Branch: Codable, FetchableRecord, PersistableRecord, Sendable, Equ
         self.acpSessionID = acpSessionID
         self.anchorMessageID = anchorMessageID
         self.anchorQuote = anchorQuote
+        self.anchorStart = anchorStart
+        self.anchorLength = anchorLength
+        self.anchorContextHash = anchorContextHash
         self.seedContext = seedContext
         self.status = status
         self.mergeNoteID = mergeNoteID
@@ -182,6 +196,9 @@ public struct Branch: Codable, FetchableRecord, PersistableRecord, Sendable, Equ
         case acpSessionID = "acp_session_id"
         case anchorMessageID = "anchor_message_id"
         case anchorQuote = "anchor_quote"
+        case anchorStart = "anchor_start"
+        case anchorLength = "anchor_length"
+        case anchorContextHash = "anchor_context_hash"
         case seedContext = "seed_context"
         case mergeNoteID = "merge_note_id"
         case createdAt = "created_at"
