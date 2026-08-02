@@ -35,7 +35,6 @@ public struct ConversationTreeView: View {
                 }
             }
         }
-        .frame(minWidth: 200, idealWidth: 230, maxWidth: 280)
         .task { viewModel.start() }
         .onDisappear { viewModel.stop() }
     }

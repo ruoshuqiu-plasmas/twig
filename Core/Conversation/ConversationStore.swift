@@ -236,13 +236,18 @@ public actor ConversationStore {
     /// 启动入口：打开最近线程（无则新建）并激活。
     public func openMostRecentOrCreate(projectRoot: String) async throws {
         let thread = try threads.listThreads().first
-            ?? threads.createThread(title: "新对话", projectRoot: projectRoot, at: now())
+            ?? threads.createThread(title: Self.defaultThreadTitle, projectRoot: projectRoot, at: now())
         try await activate(thread)
     }
 
     /// 「新对话」按钮：新建线程并激活（旧线程的流式上下文保留，后台继续写入）。
-    public func newConversation(projectRoot: String) async throws {
-        let thread = try threads.createThread(title: "新对话", projectRoot: projectRoot, at: now())
+    /// `title` 为空时用默认标题（M4-007：首条问题自动生成标题，见 ``send(key:text:metadata:)``）。
+    public func newConversation(title: String? = nil, projectRoot: String) async throws {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let thread = try threads.createThread(
+            title: trimmed.isEmpty ? Self.defaultThreadTitle : trimmed,
+            projectRoot: projectRoot, at: now()
+        )
         try await activate(thread)
     }
 
@@ -349,6 +354,13 @@ public actor ConversationStore {
             status: .completed, createdAt: date, updatedAt: date, metadataJSON: metadataJSON
         )
         try messages.insert(userMessage)
+        // M4-007（DEC-10）：默认标题的主线在首条问题落库后自动生成标题（截 20 字）。
+        if key.branchID == nil, userMessage.sequence == 1 {
+            let current = try? threads.listThreads().first(where: { $0.id == key.threadID })
+            if let thread = current ?? nil, thread.title == Self.defaultThreadTitle {
+                try? threads.renameThread(id: key.threadID, title: String(trimmed.prefix(20)))
+            }
+        }
         let placeholder = Message(
             id: UUID().uuidString, threadID: key.threadID, branchID: key.branchID,
             role: .assistant, content: "",
@@ -719,6 +731,9 @@ public actor ConversationStore {
         guard let data = try? JSONEncoder().encode(record) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    /// 新建线程的默认标题（M4-007：首条问题落库后自动替换为问题摘要）。
+    static let defaultThreadTitle = "新对话"
 
     /// 日志标签（脱敏仅前缀；区分主线/支线）。
     private static func logLabel(_ key: ConversationKey) -> String {

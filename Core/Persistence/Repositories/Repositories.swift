@@ -41,6 +41,19 @@ public struct ThreadRepository: Sendable {
         }
     }
 
+    /// 重命名线程（DEC-10 第一阶段操作集合；不影响 updated_at 排序——
+    /// 重命名不是对话活动，不应把线程顶到最近活动首位）。
+    public func renameThread(id: String, title: String, at date: Date = Date()) throws {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try db.write { db in
+            try db.execute(
+                sql: "UPDATE threads SET title = ? WHERE id = ?",
+                arguments: [trimmed, id]
+            )
+        }
+    }
+
     /// 更新线程活动时间的内部语句（MessageRepository 写入时同事务调用）。
     static func touchThread(_ db: Database, threadID: String, at date: Date) throws {
         try db.execute(

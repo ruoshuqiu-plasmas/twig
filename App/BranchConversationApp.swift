@@ -15,6 +15,7 @@ struct BranchConversationApp: App {
     @State private var viewModel: MainChatViewModel?
     @State private var branchPanel: BranchPanelViewModel?
     @State private var conversationTree: ConversationTreeViewModel?
+    @State private var threadList: ThreadListViewModel?
     @State private var startupIssue: StartupIssue?
     @State private var connectionIssue: ConnectionIssue?
     @State private var recoveryObserver: Task<Void, Never>?
@@ -41,9 +42,14 @@ struct BranchConversationApp: App {
                             connectionBanner(connectionIssue)
                         }
                         HStack(spacing: 0) {
-                            // 左侧对话树（M4-002）。
-                            if let conversationTree {
-                                ConversationTreeView(viewModel: conversationTree)
+                            // 左栏（M4-002/007）：线程列表 + 对话树。
+                            if let conversationTree, let threadList {
+                                VStack(spacing: 0) {
+                                    ThreadListView(viewModel: threadList)
+                                    Divider()
+                                    ConversationTreeView(viewModel: conversationTree)
+                                }
+                                .frame(minWidth: 200, idealWidth: 230, maxWidth: 280)
                                 Divider()
                             }
                             MainChatView(viewModel: viewModel)
@@ -125,6 +131,7 @@ struct BranchConversationApp: App {
             viewModel = chat
             branchPanel = panel
             conversationTree = tree
+            threadList = ThreadListViewModel(threads: env.threads, store: env.conversationStore)
             observeRecovery(env)
         } catch {
             // 登录失效（凭据文件在但已过期）以协议错误形态出现，保守识别后引导登录（G1-04）。

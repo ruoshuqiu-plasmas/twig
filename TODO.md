@@ -182,9 +182,11 @@
 - [x] ⬦ DEC-09：同级排序规则（2026-08-02 拍板）：**同级按最近活动 updated_at 降序，并列按 created_at 升序、id 升序兜底**；数据前提＝支线消息落库同事务触碰 branches.updated_at（流式 delta 不触碰）→ 免 ADR，决策记录于此
 - [x] 44. **M4-006** 同级排序落地 ｜ 依赖：M4-001 ｜ 输出：固定规则
   - 完成：`BranchTreeBuilder` siblingOrder 按 DEC-09 实现（BuilderTests「DEC-09 同级排序」+ TreeVMTests「消息落库触碰 updated_at」双证据）
-- [ ] ⬦ DEC-10：多主线程第一阶段操作集合（最低：创建/列表/切换/独立 root/最近排序/恢复选中）→ **免 ADR**，决策直接记入任务 45 备注（B-M4 前关闭）
-- [ ] 45. **M4-007** 主线程创建、列表、切换（每线程独立 project_root、session 映射、消息与支线树）｜ 依赖：M1-010/011 ｜ 输出：多线程基础
-- [ ] 46. **M4-008** 跨线程流式事件隔离（快速切换不串线）｜ 依赖：M4-007 ｜ 输出：路由安全
+- [x] ⬦ DEC-10：多主线程第一阶段操作集合（2026-08-02 拍板）：**创建（标题可空，首条问题自动生成）/列表/切换/独立 root/最近活动排序/恢复选中/重命名**；删除/归档/跨线程移动支线/合并线程不做 → 免 ADR，决策记录于此
+- [x] 45. **M4-007** 主线程创建、列表、切换（每线程独立 project_root、session 映射、消息与支线树）｜ 依赖：M1-010/011 ｜ 输出：多线程基础
+  - 完成：`ThreadListViewModel`+`ThreadListView`（左栏顶部：最近活动列表/点击切换/「+」新建 sheet 含 project_root 文件夹选取/双击就地重命名）；`renameThread` 不触碰 updated_at；`newConversation(title:)` + 默认标题首问自动改名（截 20 字）；7 测试全绿
+- [x] 46. **M4-008** 跨线程流式事件隔离（快速切换不串线）｜ 依赖：M4-007 ｜ 输出：路由安全
+  - 完成：THREAD-02 压测——乙流式中甲↔乙反复切换、双线并发 delta/completed 各自落库不串字、切回快照完整（ConversationKey 路由结构性保证，G1-06 之上的快速切换补强）
 - [ ] 47. **M4-009** 启动恢复本地状态（migration → 读库 → 还原左树/主对话/右侧栏 → 恢复上次选中线程）｜ 依赖：M4-001/007 ｜ 输出：本地恢复
 - [ ] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
 - [ ] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
