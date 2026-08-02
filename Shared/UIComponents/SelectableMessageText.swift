@@ -64,7 +64,7 @@ public struct SelectableMessageText: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> NSTextView {
-        let textView = NSTextView()
+        let textView = AutoSizingTextView()
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = false
@@ -73,8 +73,11 @@ public struct SelectableMessageText: NSViewRepresentable {
         textView.textContainer?.lineFragmentPadding = 0
         // 宽度跟随父布局、高度按内容撑开（SwiftUI 据此取 intrinsic size）。
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
         textView.autoresizingMask = [.width]
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.delegate = context.coordinator
@@ -84,16 +87,19 @@ public struct SelectableMessageText: NSViewRepresentable {
 
     public func updateNSView(_ textView: NSTextView, context: Context) {
         context.coordinator.onSelectionChange = onSelectionChange
-        if textView.attributedString() != attributedText {
+        // 排坑（2026-08-02 GUI 冒烟）：NSTextStorage 的字体修正（fixFontAttributeInRange）
+        // 会在 setAttributedString 后改写字体属性，使 attributedString() 与源永不相等——
+        // 若按属性串比较会反复 set → 无限布局事务循环（主线程卡死、内存膨胀）。
+        // 故只按纯文本比较：渲染器对同内容确定性输出，文本相同即属性相同。
+        if textView.string != attributedText.string {
             textView.textStorage?.setAttributedString(attributedText)
+            textView.invalidateIntrinsicContentSize()
         }
-        textView.invalidateIntrinsicContentSize()
     }
 
     /// 选区监听。NSTextView delegate 回调本就在主线程触发，显式 @MainActor 满足 Swift 6 并发标注。
     @MainActor
     public final class Coordinator: NSObject, NSTextViewDelegate {
-
         private let messageID: String
         fileprivate var onSelectionChange: (SelectionSnapshot?) -> Void
 
@@ -123,6 +129,30 @@ public struct SelectableMessageText: NSViewRepresentable {
                 messageID: messageID, quote: quote,
                 start: range.location, length: range.length
             ))
+        }
+    }
+
+    /// 按内容自适应高度的 NSTextView（2026-08-02 排坑：GUI 冒烟发现消息行重叠、
+    /// 页面无法滚动）。NSTextView 默认不向 SwiftUI 报告有效 intrinsicContentSize
+    /// （返回 noIntrinsicMetric），NSViewRepresentable 无法确定行高 → LazyVStack
+    /// 行高塌陷、ScrollView 内容高度错误。修法：intrinsicContentSize 经
+    /// layoutManager 实测排版高度回报；宽度变化时作废重算（换行数随宽度变）。
+    final class AutoSizingTextView: NSTextView {
+        override var intrinsicContentSize: NSSize {
+            guard let layoutManager, let textContainer else {
+                return super.intrinsicContentSize
+            }
+            layoutManager.ensureLayout(for: textContainer)
+            let height = layoutManager.usedRect(for: textContainer).height
+            return NSSize(width: NSView.noIntrinsicMetric, height: ceil(height))
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            let widthChanged = abs(newSize.width - frame.width) > 0.5
+            super.setFrameSize(newSize)
+            if widthChanged {
+                invalidateIntrinsicContentSize()
+            }
         }
     }
 }
