@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M3 收官、Gate G3 已通过（2026-08-02）：DEC-05/06/07 全部关闭（ADR-003 锚点坐标 + migration v2；压缩阈值 32_000 字符；临时独立摘要 session），支线全链路落地（NSTextView 选区监听 → 追问入口 → BranchContextAssembler 播种 → 独立 session 状态机 → 右侧标签栏 → 三级嵌套 → 引文回跳 → BranchMergeService 回流幂等），BR-01~18 逐条有证据（fake 全量 + 真实 CLI 4 轮验收），199 测试全绿，证据见 `doc/G3-验收报告.md`。** Gate G1/G2 已通过（证据见 `doc/G1-验收报告.md`、`doc/G2-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002/003、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 39（M4-001，B-M4 左侧对话树开工；DEC-09/10 须在任务 44/45 前关闭，均免 ADR）。
+**当前状态：B-M4 收官、Gate G4 已通过（2026-08-02）：DEC-09/10 关闭（同级最近活动降序；多线程最低集合+重命名），左栏对话树（环/孤儿保护/折叠/卡片信息）+ 树→标签→回跳联动 + 多主线程（创建/列表/切换/重命名/自动标题）+ 跨线程流式隔离 + 启动恢复与 session/load 续接四态（自定义 TwigSessionLoad 绕过 SDK 不兼容）全落地，TREE/THREAD/REC 逐条有证据（fake 全量 + 真实 CLI REC-01/02），236 测试全绿，证据见 `doc/G4-验收报告.md`。** Gate G1/G2/G3 已通过（证据见 `doc/G1-验收报告.md`、`doc/G2-验收报告.md`、`doc/G3-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002/003、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 50（M4-012，全量回归与候选构建 RC 冻结）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -29,13 +29,13 @@ Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标
 Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1 + swift-markdown @ 0.8.0 + Highlightr @ 2.3.0）
 App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI；含支线服务装配与惰性摘要器）
 Features/   MainChat/（MainChatView, MainChatViewModel, MessageRow, 追问入口）Settings/（SettingsView 只读策略页）
-            BranchPanel/（BranchPanelView, BranchPanelViewModel 右侧支线标签栏）ConversationTree/（占位，B-M4）
+            BranchPanel/（BranchPanelView, BranchPanelViewModel 右侧支线标签栏）ConversationTree/（ThreadListView(ViewModel) 线程列表 + ConversationTreeView(ViewModel) 左侧树）
 Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore, ToolCallTracker）
             Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
-            Branching/（BranchContextAssembler, ACPSummarizer, BranchSessionCoordinator, BranchMergeService, AnchorResolver, AnchorCoordinates）
+            Branching/（BranchContextAssembler, ACPSummarizer, BranchSessionCoordinator, BranchMergeService, AnchorResolver, AnchorCoordinates, BranchTreeBuilder）
             Persistence/（AppDatabase, Migrations/(v1 四表 + v2 锚点坐标), Repositories/（Thread/Message/Branch/BranchNote））
-            Conversation/（ConversationStore 会话状态机 ConversationKey(threadID,branchID?), LiveConversationDriver）
+            Conversation/（ConversationStore 会话状态机 ConversationKey(threadID,branchID?), LiveConversationDriver, SessionRecovery）
 Shared/     Models/（含 SelectionSnapshot）UIComponents/（ToolCallCard, SelectableMessageText, MarkdownBlockView/CodeBlockView）
             Markdown/（MarkdownBlockParser, MarkdownAttributedRenderer, CodeHighlighter）Logging/ TestSupport/
 Tests/

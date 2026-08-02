@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**B-M4 进行中**（分支 `feat/bm4-tree`）：任务 39 M4-001 树构建完成（`BranchTreeBuilder` 纯函数 + 环/孤儿保护，10 测试全绿）；DEC-09/10 已于 2026-08-02 拍板（同级按最近活动降序；多线程最低集合+重命名）→ 下一项 `40. M4-002` 左侧卡片式缩进树 UI
+**▶ 当前进度**：**Gate G4 已通过**（B-M4 收官，2026-08-02，分支 `feat/bm4-tree`）：DEC-09/10 关闭（同级最近活动降序；多线程最低集合+重命名）→ 树构建（环/孤儿保护）/左栏树 UI/树→标签→回跳联动/多主线程（创建/列表/切换/重命名/自动标题）/跨线程流式隔离/启动恢复+session/load 续接四态全落地，TREE/THREAD/REC 逐条有证据（fake 全量 + 真实 CLI REC-01/02），236 测试全绿，证据见 `doc/G4-验收报告.md`——下一项 `50. M4-012` 全量回归与候选构建（RC 冻结）
 
 ---
 
@@ -191,14 +191,15 @@
   - 完成：`SelectedThreadStore`（UserDefaults 单键，ThreadListVM 快照同步时写入）+ `openRestoredOrCreate`（上次选中 → 最近线程 → 新建三级回退，THREAD-04）；左树/右栏随快照 threadID 订阅自动还原（既有机制）
 - [x] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
   - 完成：按拍板策略仅启动路径对目标线程尝试 `session/load`（ACPClient.loadSession + supportsLoadSession 能力门 + LiveConversationDriver 500ms 安静窗口吞异步重放防重复工具卡片）；失败退化新建 + sessionUnavailable；renewSessions 标 sessionRecreated；`SessionRecoveryState` 随快照下发 + 主对话可关闭横幅四态文案；7 测试全绿（REC-01/02/04 数据面 + THREAD-04）
-- [ ] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
+- [x] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
+  - 完成：G4MatrixTests 补洞（TREE-03 集成点击→激活+回跳、REC-03 损坏库不损原文件+migration 幂等）+ 真实 CLI 两例（`sessionResumeRealCLI` REC-01、`sessionResumeUnavailableRealCLI` REC-02，约 5 次最小化 prompt 含排障复测，用户批准）→ `doc/G4-验收报告.md`，236 全绿；排坑：kimi 0.31.1 session/load 需 mcpServers 必填且响应无 sessionId → 自定义 TwigSessionLoad（协议事实补记 g0-findings §2，工程笔记）
 
-### Gate G4 测试矩阵（§8.6）
-- [ ] TREE-01 一级支线挂根 ｜ TREE-02 多级缩进 ｜ TREE-03 点击激活+回跳 ｜ TREE-04 已回流节点标记
-- [ ] TREE-05 折叠展开不改数据 ｜ TREE-06 异常父 id 不崩不环 ｜ TREE-07 重复锚点定位/降级 ｜ TREE-08 重渲染后回跳有效
-- [ ] THREAD-01 双线程独立 ｜ THREAD-02 快速切换不串线 ｜ THREAD-03 各自 project_root ｜ THREAD-04 重启恢复选中态
-- [ ] REC-01 ACP 支持恢复→续接成功 ｜ REC-02 不支持→降级路径明确 ｜ REC-03 迁移失败不损原库 ｜ REC-04 子进程重启后 UI 与能力一致
-- [ ] G4 附加：树与 parent_branch_id 完全一致；session 恢复能力与 UI 表述一致
+### Gate G4 测试矩阵（§8.6）✅ 已通过（2026-08-02，证据见 `doc/G4-验收报告.md`）
+- [x] TREE-01 一级支线挂根 ｜ TREE-02 多级缩进 ｜ TREE-03 点击激活+回跳 ｜ TREE-04 已回流节点标记
+- [x] TREE-05 折叠展开不改数据 ｜ TREE-06 异常父 id 不崩不环 ｜ TREE-07 重复锚点定位/降级 ｜ TREE-08 重渲染后回跳有效
+- [x] THREAD-01 双线程独立 ｜ THREAD-02 快速切换不串线 ｜ THREAD-03 各自 project_root ｜ THREAD-04 重启恢复选中态
+- [x] REC-01 ACP 支持恢复→续接成功 ｜ REC-02 不支持→降级路径明确 ｜ REC-03 迁移失败不损原库 ｜ REC-04 子进程重启后 UI 与能力一致
+- [x] G4 附加：树与 parent_branch_id 完全一致；session 恢复能力与 UI 表述一致
 
 - [ ] 50. **M4-012** 全量回归与候选构建（RC 前冻结：schema/协议映射/allowlist/版本/文案/范围）｜ 依赖：全部 ｜ 输出：RC
 

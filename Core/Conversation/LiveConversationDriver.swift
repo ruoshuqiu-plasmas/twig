@@ -1,4 +1,5 @@
 import Foundation
+import Logging
 
 /// session 续接失败原因（M4-010，REC-02 降级路径的判定依据）。
 public enum SessionLoadError: Error, Sendable, Equatable {
@@ -18,11 +19,18 @@ public struct LiveConversationDriver: ConversationDriver {
     /// load 重放安静窗口（G0 §2：历史在响应后异步突发到达；窗口内事件由临时订阅吞掉，
     /// 防止重放的 tool_call 事件落成重复工具卡片）。
     private let replaySettle: Duration
+    private let logger: Logger
 
-    public init(client: ACPClient, sessionStore: SessionStore, replaySettle: Duration = .milliseconds(500)) {
+    public init(
+        client: ACPClient,
+        sessionStore: SessionStore,
+        replaySettle: Duration = .milliseconds(500),
+        logger: Logger = Logger(label: "twig.conversation.driver")
+    ) {
         self.client = client
         self.sessionStore = sessionStore
         self.replaySettle = replaySettle
+        self.logger = logger
     }
 
     public func makeSession(cwd: String, owner: SessionStore.Owner) async throws -> String {
@@ -32,7 +40,9 @@ public struct LiveConversationDriver: ConversationDriver {
     }
 
     public func loadSession(sessionID: String, cwd: String, owner: SessionStore.Owner) async throws {
-        guard await client.supportsLoadSession else {
+        let capable = await client.supportsLoadSession
+        logger.debug("loadSession 尝试：capable=\(capable) session=\(sessionID.prefix(8))…")
+        guard capable else {
             throw SessionLoadError.unsupported
         }
         // 先挂临时订阅吞重放（SessionStore 不做事件缓冲，正式消费在窗口后才订阅）。
@@ -44,6 +54,7 @@ public struct LiveConversationDriver: ConversationDriver {
             try await Task.sleep(for: replaySettle)
         } catch {
             drain.cancel()
+            logger.warning("loadSession 失败：\(error.localizedDescription)")
             if error is SessionLoadError { throw error }
             throw SessionLoadError.failed(error.localizedDescription)
         }

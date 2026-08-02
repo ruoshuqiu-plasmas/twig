@@ -110,10 +110,14 @@ public actor ACPClient {
     /// 重放窗口的处置归调用方（``LiveConversationDriver`` 的安静窗口）。
     @discardableResult
     public func loadSession(cwd: String, sessionID: String) async throws -> String {
-        let result = try await client.send(
-            SessionLoad.request(SessionLoad.Parameters(sessionID: sessionID, cwd: cwd))
+        _ = try await client.send(
+            TwigSessionLoad.request(
+                TwigSessionLoad.Parameters(sessionID: sessionID, cwd: cwd, mcpServers: [])
+            )
         )
-        return result.sessionID
+        // kimi 0.31.1 实测：session/load 结果不含 sessionId（只回 configOptions），
+        // 成功即沿用入参 id。
+        return sessionID
     }
 
     /// 发送 prompt；完成广播 ``AgentEvent/completed(sessionID:stopReason:)``，
