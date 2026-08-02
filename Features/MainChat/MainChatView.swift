@@ -40,8 +40,12 @@ public struct MainChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(viewModel.messages, id: \.id) { message in
-                        MessageRow(message: message, onRetry: { viewModel.retry() })
-                            .id(message.id)
+                        MessageRow(
+                            message: message,
+                            onRetry: { viewModel.retry() },
+                            onSelectionChange: { viewModel.currentSelection = $0 }
+                        )
+                        .id(message.id)
                     }
                 }
                 .padding()
@@ -96,6 +100,8 @@ private struct MessageRow: View {
 
     let message: Message
     let onRetry: () -> Void
+    /// 选区变化回调（M3-001）：assistant 稳定态正文与工具结果区的选区快照。
+    let onSelectionChange: (SelectionSnapshot?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,7 +125,9 @@ private struct MessageRow: View {
                 status: record.status.rawValue,
                 kind: record.kind,
                 paths: record.paths ?? [],
-                content: record.contentText ?? message.content
+                content: record.contentText ?? message.content,
+                messageID: message.id,
+                onSelectionChange: onSelectionChange
             )
         } else if message.kind == .notice {
             Label(message.content, systemImage: "exclamationmark.shield")
@@ -134,12 +142,18 @@ private struct MessageRow: View {
         }
     }
 
-    /// 消息正文（M2-007）：assistant 稳定态走 Markdown 块渲染；
-    /// 流式中与 user 消息保持纯文本（流式先保可见，§6.5 第 1 条）。
+    /// 消息正文（M2-007/M3-001）：assistant 稳定态走 Markdown → NSAttributedString →
+    /// 只读 NSTextView（``SelectableMessageText``，可回报选区快照）；
+    /// 流式中与 user 消息保持纯文本 `.textSelection`（流式先保可见，§6.5 第 1 条），
+    /// 两套选择系统相互独立、不会互覆。
     @ViewBuilder
     private var bodyContent: some View {
         if message.role == .assistant && message.status != .streaming {
-            MarkdownBlockView(blocks: MarkdownBlockParser.parse(message.content))
+            SelectableMessageText(
+                messageID: message.id,
+                attributedText: MarkdownAttributedRenderer.render(MarkdownBlockParser.parse(message.content)),
+                onSelectionChange: onSelectionChange
+            )
         } else {
             Text(displayContent)
                 .textSelection(.enabled)

@@ -18,6 +18,10 @@ public final class MainChatViewModel {
     public var input: String = ""
     /// 简版错误条（三态引导页归 M1-013）。
     public var errorBanner: String?
+    /// 当前有效选区快照（任务 M3-001 临时入口）：assistant 稳定态消息/工具结果的
+    /// SelectableMessageText 选区变化时写入；nil 表示无有效选区。
+    /// 「追问」浮动按钮 UI 归 M3-003——届时点击追问即冻结该 snapshot 进入支线创建流程。
+    public var currentSelection: SelectionSnapshot?
 
     private let store: ConversationStore
     /// B-M1 临时方案：新线程的 project_root 取进程工作目录（M4-007 再提供选择入口）。
