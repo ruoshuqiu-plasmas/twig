@@ -216,7 +216,12 @@ public final class BranchPanelViewModel {
 
     /// 从左侧树打开支线（M4-004，TREE-04）：closed 支线经 forceOpenedIDs 临时可见
     /// （不改 status、不写库），hidden 标签解除隐藏，随后切到该标签。
+    /// 面板尚未 start（threadID 未知，如重启后右栏未出现）时先按支线所属线程补位——
+    /// 否则 refresh 早退会把 visibleBranches 清空，点击完全无反应。
     public func openFromTree(branchID: String) {
+        if threadID == nil, let branch = try? branches.branch(id: branchID) {
+            threadID = branch.threadID
+        }
         hiddenBranchIDs.remove(branchID)
         forceOpenedIDs.insert(branchID)
         refresh()

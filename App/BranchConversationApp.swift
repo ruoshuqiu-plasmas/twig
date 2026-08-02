@@ -132,6 +132,9 @@ struct BranchConversationApp: App {
             branchPanel = panel
             conversationTree = tree
             threadList = ThreadListViewModel(threads: env.threads, store: env.conversationStore)
+            // 面板在装配期即启动（不再等右栏出现才 start）：重启后有历史支线时
+            // 右栏自动恢复可见（BR-18），且树点击的 openFromTree 始终有 threadID 可用。
+            panel.start()
             observeRecovery(env)
         } catch {
             // 登录失效（凭据文件在但已过期）以协议错误形态出现，保守识别后引导登录（G1-04）。
