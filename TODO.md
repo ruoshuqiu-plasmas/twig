@@ -187,8 +187,10 @@
   - 完成：`ThreadListViewModel`+`ThreadListView`（左栏顶部：最近活动列表/点击切换/「+」新建 sheet 含 project_root 文件夹选取/双击就地重命名）；`renameThread` 不触碰 updated_at；`newConversation(title:)` + 默认标题首问自动改名（截 20 字）；7 测试全绿
 - [x] 46. **M4-008** 跨线程流式事件隔离（快速切换不串线）｜ 依赖：M4-007 ｜ 输出：路由安全
   - 完成：THREAD-02 压测——乙流式中甲↔乙反复切换、双线并发 delta/completed 各自落库不串字、切回快照完整（ConversationKey 路由结构性保证，G1-06 之上的快速切换补强）
-- [ ] 47. **M4-009** 启动恢复本地状态（migration → 读库 → 还原左树/主对话/右侧栏 → 恢复上次选中线程）｜ 依赖：M4-001/007 ｜ 输出：本地恢复
-- [ ] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
+- [x] 47. **M4-009** 启动恢复本地状态（migration → 读库 → 还原左树/主对话/右侧栏 → 恢复上次选中线程）｜ 依赖：M4-001/007 ｜ 输出：本地恢复
+  - 完成：`SelectedThreadStore`（UserDefaults 单键，ThreadListVM 快照同步时写入）+ `openRestoredOrCreate`（上次选中 → 最近线程 → 新建三级回退，THREAD-04）；左树/右栏随快照 threadID 订阅自动还原（既有机制）
+- [x] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
+  - 完成：按拍板策略仅启动路径对目标线程尝试 `session/load`（ACPClient.loadSession + supportsLoadSession 能力门 + LiveConversationDriver 500ms 安静窗口吞异步重放防重复工具卡片）；失败退化新建 + sessionUnavailable；renewSessions 标 sessionRecreated；`SessionRecoveryState` 随快照下发 + 主对话可关闭横幅四态文案；7 测试全绿（REC-01/02/04 数据面 + THREAD-04）
 - [ ] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
 
 ### Gate G4 测试矩阵（§8.6）

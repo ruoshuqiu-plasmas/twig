@@ -33,12 +33,19 @@ public final class ThreadListViewModel {
 
     private let threadRepo: ThreadRepository
     private let store: ConversationStore
+    /// 上次选中线程持久化（M4-009）。
+    private let selectedThreads: SelectedThreadStore
     private var snapshotTask: Task<Void, Never>?
     private var started = false
 
-    public init(threads: ThreadRepository, store: ConversationStore) {
+    public init(
+        threads: ThreadRepository,
+        store: ConversationStore,
+        selectedThreads: SelectedThreadStore = SelectedThreadStore()
+    ) {
         self.threadRepo = threads
         self.store = store
+        self.selectedThreads = selectedThreads
     }
 
     // MARK: - 生命周期
@@ -52,6 +59,10 @@ public final class ThreadListViewModel {
                 guard let self, !Task.isCancelled else { return }
                 if snapshot.threadID != self.activeThreadID {
                     self.activeThreadID = snapshot.threadID
+                    // M4-009（THREAD-04）：持久化上次选中线程，供启动恢复。
+                    if let threadID = snapshot.threadID {
+                        self.selectedThreads.save(threadID)
+                    }
                     // 切换后刷新：激活的线程 updated_at 可能已变（如自动标题生成）。
                     self.refresh()
                 }

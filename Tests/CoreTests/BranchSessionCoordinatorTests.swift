@@ -19,9 +19,16 @@ struct BranchSessionCoordinatorTests {
         private var sessionCounter = 0
         /// 设置后下一次 makeSession 抛出（消费一次）。
         private var sessionError: (any Error)?
+        /// 设置后下一次 loadSession 抛出（消费一次；M4-010 降级路径测试）。
+        private var loadError: (any Error)?
+        /// loadSession 调用记录（sessionID/cwd/owner 顺序）。
+        private var loads: [(sessionID: String, cwd: String, owner: SessionStore.Owner)] = []
 
         var sessionCount: Int { sessions.count }
         var sentPromptCount: Int { sentPrompts.count }
+        var loadCount: Int { loads.count }
+        func loadedSessionID(at index: Int) -> String { loads[index].sessionID }
+        func failNextLoad(_ error: any Error) { loadError = error }
         func sessionID(at index: Int) -> String { sessions[index].sessionID }
         func sessionOwner(at index: Int) -> SessionStore.Owner { sessions[index].owner }
         /// 发往指定 session 的 prompt 文本（按发送顺序；BR-05/08 隔离断言用）。
@@ -43,6 +50,14 @@ struct BranchSessionCoordinatorTests {
 
         func sendPrompt(sessionID: String, text: String) async throws {
             sentPrompts.append((sessionID, text))
+        }
+
+        func loadSession(sessionID: String, cwd: String, owner: SessionStore.Owner) async throws {
+            loads.append((sessionID, cwd, owner))
+            if let loadError {
+                self.loadError = nil
+                throw loadError
+            }
         }
 
         func events(for sessionID: String) async -> AsyncStream<AgentEvent> {

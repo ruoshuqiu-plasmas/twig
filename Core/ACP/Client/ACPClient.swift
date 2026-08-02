@@ -26,6 +26,8 @@ public actor ACPClient {
     /// 每 session 的工具调用聚合（permission 请求自身不带 kind，须按 toolCallId
     /// 关联查 kind——G0 实测时序：tool_call 先、request_permission 后）。
     private var toolTrackers: [String: ToolCallTracker] = [:]
+    /// agent 是否声明 `session/load` 能力（M4-010；G0 实测 CLI 0.31.0 为 true）。
+    public private(set) var supportsLoadSession = false
 
     public init(
         supervisor: ACPProcessSupervisor,
@@ -85,6 +87,7 @@ public actor ACPClient {
 
         do {
             let result = try await client.connect(transport: transport)
+            supportsLoadSession = result.agentCapabilities.loadSession ?? false
             await supervisor.markReady()
             return result
         } catch {
@@ -98,6 +101,17 @@ public actor ACPClient {
     public func newSession(cwd: String) async throws -> String {
         let result = try await client.send(
             SessionNew.request(SessionNew.Parameters(cwd: cwd, mcpServers: []))
+        )
+        return result.sessionID
+    }
+
+    /// 加载既有 session（M4-010，DEC-04 实测支持）。
+    /// 历史重放为响应后异步到达的 session/update 通知（G0 §2），
+    /// 重放窗口的处置归调用方（``LiveConversationDriver`` 的安静窗口）。
+    @discardableResult
+    public func loadSession(cwd: String, sessionID: String) async throws -> String {
+        let result = try await client.send(
+            SessionLoad.request(SessionLoad.Parameters(sessionID: sessionID, cwd: cwd))
         )
         return result.sessionID
     }
