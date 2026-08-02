@@ -13,6 +13,7 @@ struct BranchConversationApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var environment: AppEnvironment?
     @State private var viewModel: MainChatViewModel?
+    @State private var branchPanel: BranchPanelViewModel?
     @State private var startupIssue: StartupIssue?
     @State private var connectionIssue: ConnectionIssue?
     @State private var recoveryObserver: Task<Void, Never>?
@@ -38,7 +39,14 @@ struct BranchConversationApp: App {
                         if let connectionIssue {
                             connectionBanner(connectionIssue)
                         }
-                        MainChatView(viewModel: viewModel)
+                        HStack(spacing: 0) {
+                            MainChatView(viewModel: viewModel)
+                            // 右侧支线标签栏（M3-007）：有支线或创建进行中才显示。
+                            if let branchPanel, branchPanel.hasVisibleContent {
+                                Divider()
+                                BranchPanelView(viewModel: branchPanel)
+                            }
+                        }
                     }
                 } else {
                     ProgressView("正在连接 Kimi Code CLI…")
@@ -73,7 +81,25 @@ struct BranchConversationApp: App {
             // B-M1 临时方案：project_root 取进程工作目录（M4-007 提供选择入口）。
             let cwd = FileManager.default.currentDirectoryPath
             let projectRoot = cwd == "/" ? NSHomeDirectory() : cwd
-            viewModel = MainChatViewModel(store: env.conversationStore, projectRoot: projectRoot)
+            let chat = MainChatViewModel(store: env.conversationStore, projectRoot: projectRoot)
+            // 支线面板（M3-007）：追问请求出口 → 面板创建编排（M3-003）；
+            // 主线锚点回跳出口 → 主对话滚动高亮（M3-010）。weak 避免两个 VM 循环持有。
+            let panel = BranchPanelViewModel(
+                branches: env.branches,
+                threads: env.threads,
+                messages: env.messages,
+                conversation: env.conversationStore,
+                coordinator: env.branchCoordinator,
+                mergeService: env.branchMergeService
+            )
+            chat.onRequestBranchCreation = { [weak panel] request in
+                panel?.startCreation(request)
+            }
+            panel.onJumpToMainline = { [weak chat] jump in
+                chat?.handleAnchorJump(jump)
+            }
+            viewModel = chat
+            branchPanel = panel
             observeRecovery(env)
         } catch {
             // 登录失效（凭据文件在但已过期）以协议错误形态出现，保守识别后引导登录（G1-04）。

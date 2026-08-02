@@ -228,7 +228,8 @@ public struct BranchMergeService: Sendable {
 
     /// 种子消息识别：ConversationStore 种子标记为 `{"kind":"seed_context"}`；
     /// 兼容手写/历史样本的 camelCase 写法（metadataJSON 含 "seedContext"）。
-    static func isSeedMessage(_ message: Message) -> Bool {
+    /// （public：B-M3 支线面板 seed 折叠与轮数统计复用同一识别规则，M3-007。）
+    public static func isSeedMessage(_ message: Message) -> Bool {
         guard let metadataJSON = message.metadataJSON else { return false }
         if metadataJSON.contains("seedContext") { return true }
         return decodeMetadata(metadataJSON)["kind"] == "seed_context"

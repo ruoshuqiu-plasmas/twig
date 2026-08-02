@@ -59,6 +59,8 @@ let package = Package(
             dependencies: [
                 "Core",
                 "Shared",
+                // B-M3 起 ViewModel（Features 层）单测也落在本目标。
+                "Features",
                 .product(name: "ACP", package: "acp-swift-sdk"),
                 .product(name: "GRDB", package: "GRDB.swift")
             ],
