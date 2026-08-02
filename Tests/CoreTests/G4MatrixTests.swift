@@ -75,7 +75,7 @@ struct G4MatrixTests {
         world.panel.onJumpToMainline = { jump = $0 }
         world.tree.onSelectBranch = { branchID in
             world.panel.openFromTree(branchID: branchID)
-            world.panel.jumpToAnchor(branchID: branchID)
+            world.panel.jumpToAnchorFromTree(branchID: branchID)
         }
         world.tree.threadID = "t1"
         world.panel.threadID = "t1"
@@ -86,6 +86,45 @@ struct G4MatrixTests {
         #expect(world.panel.activeBranchID == "b1")          // 标签已激活
         #expect(world.tree.selectedBranchID == "b1")          // 树选中态
         #expect(jump?.messageID == "m1")                      // 回跳目标 = 锚点消息
+    }
+
+    @Test("TREE-03 集成（嵌套）：点击嵌套支线 → 激活子节点标签，不抢回父级、不发主线回跳")
+    func treeClickNestedBranchKeepsChildActive() throws {
+        let world = try makeWorld()
+        try world.messages.insert(Message(
+            id: "m1", threadID: "t1", branchID: nil, role: .assistant, kind: .text,
+            content: "主线回答正文", sequence: 1, status: .completed,
+            createdAt: t0, updatedAt: t0, metadataJSON: nil
+        ))
+        try world.branches.create(
+            id: "b1", threadID: "t1", anchorMessageID: "m1", anchorQuote: "主线正文", at: t0
+        )
+        try world.messages.insert(Message(
+            id: "m2", threadID: "t1", branchID: "b1", role: .assistant, kind: .text,
+            content: "父支线回答正文", sequence: 2, status: .completed,
+            createdAt: t0, updatedAt: t0, metadataJSON: nil
+        ))
+        try world.branches.create(
+            id: "b2", threadID: "t1", parentBranchID: "b1",
+            anchorMessageID: "m2", anchorQuote: "父支线正文", at: t0
+        )
+
+        // 与 App 层同款接线（jumpToAnchorFromTree 替代引文场景的 jumpToAnchor）。
+        var jump: AnchorJump?
+        world.panel.onJumpToMainline = { jump = $0 }
+        world.tree.onSelectBranch = { branchID in
+            world.panel.openFromTree(branchID: branchID)
+            world.panel.jumpToAnchorFromTree(branchID: branchID)
+        }
+        world.tree.threadID = "t1"
+        world.panel.threadID = "t1"
+        world.tree.refresh()
+
+        world.tree.select(branchID: "b2")
+
+        #expect(world.panel.activeBranchID == "b2")   // 激活权归点的子节点（不被降级抢回 b1）
+        #expect(world.tree.selectedBranchID == "b2")
+        #expect(jump == nil)                          // 嵌套锚点在父支线流中，不发主线回跳
     }
 
     // MARK: - REC-03

@@ -76,45 +76,51 @@ public struct ConversationTreeView: View {
                 }
                 .buttonStyle(.plain)
             }
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 4) {
-                    Text(info?.title ?? node.branch.anchorQuote)
-                        .font(.callout)
-                        .lineLimit(2)
-                    if node.isOrphan {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                            .help("锚点父引用异常，已挂到根节点")
+            // 整卡 Button 承载点击（macOS LazyVStack 内 onTapGesture 命中不稳定，
+            // 曾导致点卡片无反应）；chevron 折叠保留为外侧独立按钮，避免按钮嵌套。
+            Button {
+                viewModel.select(branchID: node.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text(info?.title ?? node.branch.anchorQuote)
+                            .font(.callout)
+                            .lineLimit(2)
+                        if node.isOrphan {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .help("锚点父引用异常，已挂到根节点")
+                        }
                     }
-                }
-                HStack(spacing: 6) {
-                    statusBadge(node.branch.status)
-                    if info?.mergedBack == true {
-                        Text("已回流")
-                            .font(.caption2)
-                            .foregroundStyle(.green)
-                    }
-                    Text("\(info?.roundCount ?? 0) 轮")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    if let lastActivity = info?.lastActivity {
-                        Text(lastActivity, style: .relative)
+                    HStack(spacing: 6) {
+                        statusBadge(node.branch.status)
+                        if info?.mergedBack == true {
+                            Text("已回流")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        }
+                        Text("\(info?.roundCount ?? 0) 轮")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                        Spacer()
+                        if let lastActivity = info?.lastActivity {
+                            Text(lastActivity, style: .relative)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.08))
+                )
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.gray.opacity(0.08))
-            )
+            .buttonStyle(.plain)
         }
-        .contentShape(Rectangle())
-        .onTapGesture { viewModel.select(branchID: node.id) }
     }
 
     private func statusBadge(_ status: BranchStatus) -> some View {
