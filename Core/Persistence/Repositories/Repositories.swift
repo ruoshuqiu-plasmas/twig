@@ -123,11 +123,19 @@ public struct MessageRepository: Sendable {
         }
     }
 
-    /// 插入消息（§5.7：发送即存 / 流式占位），同事务触碰线程活动时间。
+    /// 插入消息（§5.7：发送即存 / 流式占位），同事务触碰线程活动时间；
+    /// 支线消息一并触碰支线 updated_at（DEC-09 同级「最近活动」排序的数据前提；
+    /// 流式 delta 走 ``appendContent`` 不触碰，避免每条 delta 触发树重建）。
     public func insert(_ message: Message) throws {
         try db.write { db in
             try message.insert(db)
             try ThreadRepository.touchThread(db, threadID: message.threadID, at: message.updatedAt)
+            if let branchID = message.branchID {
+                try db.execute(
+                    sql: "UPDATE branches SET updated_at = ? WHERE id = ?",
+                    arguments: [message.updatedAt, branchID]
+                )
+            }
         }
     }
 
