@@ -120,7 +120,7 @@ struct BranchConversationApp: App {
             )
             tree.onSelectBranch = { [weak panel] branchID in
                 panel?.openFromTree(branchID: branchID)
-                panel?.jumpToAnchor(branchID: branchID)
+                panel?.jumpToAnchorFromTree(branchID: branchID)
             }
             panel.onBranchesChanged = { [weak tree] in
                 tree?.refresh()

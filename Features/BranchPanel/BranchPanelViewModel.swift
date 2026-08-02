@@ -453,6 +453,15 @@ public final class BranchPanelViewModel {
         onJumpToMainline?(AnchorJump(messageID: anchorMessageID, resolution: resolution))
     }
 
+    /// 树节点点击的回跳变体（M4-005）：仅主线锚点（一级支线）执行主对话回跳。
+    /// 嵌套支线**不**走 ``jumpToAnchor(branchID:)`` 的切父标签降级——
+    /// 用户在树里显式点的是子节点，激活权归子节点（引文按钮的降级语义只服务于引文场景）。
+    public func jumpToAnchorFromTree(branchID: String) {
+        guard let branch = visibleBranches.first(where: { $0.id == branchID }),
+              branch.parentBranchID == nil else { return }
+        jumpToAnchor(branchID: branchID)
+    }
+
     // MARK: - 派生数据（可测纯逻辑）
 
     /// 轮数：快照中 role==user 且 kind==text 且非 seed 的消息数（M3-013）。
