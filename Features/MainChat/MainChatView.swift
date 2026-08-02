@@ -20,6 +20,23 @@ public struct MainChatView: View {
             if let banner = viewModel.errorBanner {
                 errorBar(banner)
             }
+            if let recovery = viewModel.recoveryBanner {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise")
+                        .foregroundStyle(.secondary)
+                    Text(recovery)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("知道了") { viewModel.recoveryBanner = nil }
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.gray.opacity(0.08))
+            }
             messageList
             if viewModel.isComposingBranchQuestion {
                 Divider()

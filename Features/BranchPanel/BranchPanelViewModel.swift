@@ -53,8 +53,10 @@ public final class BranchPanelViewModel {
 
     /// 可见支线（status != closed 且未被 UI 层关闭），按创建时间升序。
     public private(set) var visibleBranches: [Branch] = []
-    /// 当前激活标签。
-    public var activeBranchID: String?
+    /// 当前激活标签（didSet 通知出口，供左侧树同步选中态）。
+    public var activeBranchID: String? {
+        didSet { onActiveBranchChanged?(activeBranchID) }
+    }
     /// 当前活跃线程 id（主线快照驱动；测试可直接 internal 写入后调 ``refresh()``）。
     public internal(set) var threadID: String?
     /// 每支线消息流（快照订阅实时更新；上下文未打开的支线为启动时从库内读出的历史，BR-18）。
@@ -89,6 +91,10 @@ public final class BranchPanelViewModel {
 
     /// 主线锚点回跳出口（App 层接线到 MainChatViewModel.handleAnchorJump）。
     public var onJumpToMainline: ((AnchorJump) -> Void)?
+    /// 支线集合/状态变化出口（App 层接线到 ConversationTreeViewModel.refresh；M4-004）。
+    public var onBranchesChanged: (() -> Void)?
+    /// 激活标签变化出口（App 层接线到左侧树选中态同步；M4-004）。
+    public var onActiveBranchChanged: ((String?) -> Void)?
 
     // MARK: - 依赖
 
@@ -101,6 +107,8 @@ public final class BranchPanelViewModel {
 
     /// UI 层关闭的标签（仅内存；支线上下文与数据常驻，BR-15；重启后重新可见）。
     private var hiddenBranchIDs: Set<String> = []
+    /// 从左侧树强制打开的 closed 支线（仅内存；TREE-04 已回流/已关闭节点仍可查看，不改 status）。
+    private var forceOpenedIDs: Set<String> = []
     /// 10 轮提示「忽略」标记（内存，本轮会话不再提示；M3-013）。
     private var tenRoundDismissed: Set<String> = []
 
@@ -162,7 +170,9 @@ public final class BranchPanelViewModel {
             return
         }
         let all = (try? branches.listBranches(threadID: threadID)) ?? []
-        visibleBranches = all.filter { $0.status != .closed && !hiddenBranchIDs.contains($0.id) }
+        visibleBranches = all.filter {
+            ($0.status != .closed || forceOpenedIDs.contains($0.id)) && !hiddenBranchIDs.contains($0.id)
+        }
         for branch in visibleBranches {
             // 上下文未打开的支线：从库内补历史（快照订阅 replay 为空快照，由 threadID 守卫跳过）。
             if let history = try? messages.messages(threadID: threadID, branchID: branch.id) {
@@ -177,6 +187,7 @@ public final class BranchPanelViewModel {
         if activeBranchID == nil || !visibleBranches.contains(where: { $0.id == activeBranchID }) {
             activeBranchID = visibleBranches.last?.id
         }
+        onBranchesChanged?()
     }
 
     // MARK: - 标签切换与关闭
@@ -199,7 +210,17 @@ public final class BranchPanelViewModel {
     /// 父标签隐藏不影响子支线数据与流式。
     public func closeTab(branchID: String) {
         hiddenBranchIDs.insert(branchID)
+        forceOpenedIDs.remove(branchID)
         refresh()
+    }
+
+    /// 从左侧树打开支线（M4-004，TREE-04）：closed 支线经 forceOpenedIDs 临时可见
+    /// （不改 status、不写库），hidden 标签解除隐藏，随后切到该标签。
+    public func openFromTree(branchID: String) {
+        hiddenBranchIDs.remove(branchID)
+        forceOpenedIDs.insert(branchID)
+        refresh()
+        select(branchID: branchID)
     }
 
     // MARK: - 支线创建（追问出口，M3-003/M3-009）

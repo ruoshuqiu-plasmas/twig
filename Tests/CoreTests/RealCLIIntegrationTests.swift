@@ -416,6 +416,142 @@ struct RealCLIIntegrationTests {
         await client.disconnect()
     }
 
+    // MARK: - G4 恢复验收（M4-011；REC-01/02）
+
+    /// REC-01 真实续接：store1 建线程并发一轮（session 映射落库）→ 模拟应用重启
+    /// （新 supervisor/client/sessionStore，同一文件库）→ store2 `openRestoredOrCreate`
+    /// 走 `session/load` 续接成功（sessionResumed，不新建 session）→ 续接 session 上追问一轮。
+    /// 共 2 次真实 prompt（均 ≤10 字回答）。
+    @Test("真实 CLI：重启后 session/load 续接成功（REC-01）")
+    func sessionResumeRealCLI() async throws {
+        guard enabled else { return }
+
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("twig-g4-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        // 文件库（跨「重启」保留线程与 session 映射）。
+        let appDB = try AppDatabase.makeDefault(directory: sandbox)
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+
+        // —— 第一段：建线程、发一轮，session 映射落库 ——
+        let supervisor1 = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client1 = ACPClient(supervisor: supervisor1)
+        let sessionStore1 = SessionStore(mappingStore: threads)
+        let store1 = ConversationStore(
+            threads: threads, messages: messages,
+            driver: LiveConversationDriver(client: client1, sessionStore: sessionStore1)
+        )
+
+        let firstSessionID: String = try await withTimeout(seconds: 180, operation: "G4 REC-01 第一段") {
+            await sessionStore1.attach(to: client1)
+            try await client1.connect()
+            try await store1.openMostRecentOrCreate(projectRoot: sandbox.path)
+            try await store1.send(text: "请只回复两个字：续接")
+            let threadID = try #require(await store1.currentSnapshot().threadID)
+            try await waitAssistantCompleted(messages: messages, threadID: threadID, branchID: nil)
+            let thread = try #require(try threads.listThreads().first { $0.id == threadID })
+            return try #require(thread.acpSessionID, "首轮后线程应有持久化 session 映射")
+        }
+        await client1.disconnect()
+
+        // —— 第二段：模拟重启，openRestoredOrCreate 尝试续接 ——
+        let supervisor2 = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client2 = ACPClient(supervisor: supervisor2)
+        let sessionStore2 = SessionStore(mappingStore: threads)
+        let store2 = ConversationStore(
+            threads: threads, messages: messages,
+            driver: LiveConversationDriver(client: client2, sessionStore: sessionStore2)
+        )
+
+        try await withTimeout(seconds: 240, operation: "G4 REC-01 第二段") {
+            await sessionStore2.attach(to: client2)
+            try await client2.connect()
+            #expect(await client2.supportsLoadSession, "CLI 0.31.0 应声明 loadSession 能力")
+
+            try await store2.openRestoredOrCreate(projectRoot: sandbox.path, lastSelectedThreadID: nil)
+            let snapshot = await store2.currentSnapshot()
+            #expect(snapshot.recovery == .sessionResumed,
+                    "续接应成功（实际 \(String(describing: snapshot.recovery))）")
+            #expect(!(snapshot.messages.isEmpty), "本地历史应完整呈现")
+
+            // 续接的 session 上继续对话（不新建 session：第二段无任何 session/new）。
+            try await store2.send(text: "请只回复两个字：成功")
+            let threadID = try #require(snapshot.threadID)
+            try await waitAssistantCompleted(messages: messages, threadID: threadID, branchID: nil)
+            let thread = try #require(try threads.listThreads().first { $0.id == threadID })
+            #expect(thread.acpSessionID == firstSessionID,
+                    "续接后映射仍指向原 session（未新建）")
+            return true
+        }
+
+        await client2.disconnect()
+    }
+
+    /// REC-02 真实降级：线程映射指向不存在的 session id → load 失败 →
+    /// sessionUnavailable + 退化新建 session，本地历史无损、可继续对话。共 1 次真实 prompt。
+    @Test("真实 CLI：session 不可续接时降级新建（REC-02）")
+    func sessionResumeUnavailableRealCLI() async throws {
+        guard enabled else { return }
+
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("twig-g4bad-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let supervisor = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client = ACPClient(supervisor: supervisor)
+        let sessionStore = SessionStore(mappingStore: threads)
+        let store = ConversationStore(
+            threads: threads, messages: messages,
+            driver: LiveConversationDriver(client: client, sessionStore: sessionStore)
+        )
+
+        try await withTimeout(seconds: 240, operation: "G4 REC-02 验收") {
+            await sessionStore.attach(to: client)
+            try await client.connect()
+
+            // 预置线程 + 指向不存在 session 的映射（模拟 agent 侧 session 已清理）。
+            let thread = try threads.createThread(title: "降级验证", projectRoot: sandbox.path)
+            try messages.insert(Message(
+                id: "m-hist", threadID: thread.id, branchID: nil, role: .user, kind: .text,
+                content: "历史问题", sequence: 1, status: .completed,
+                createdAt: Date(), updatedAt: Date(), metadataJSON: nil
+            ))
+            try threads.saveMapping(sessionID: "sess-definitely-not-exists", owner: .thread(thread.id))
+
+            try await store.openRestoredOrCreate(projectRoot: sandbox.path, lastSelectedThreadID: nil)
+            let snapshot = await store.currentSnapshot()
+            #expect(snapshot.recovery == .sessionUnavailable,
+                    "不存在的 session 应走降级（实际 \(String(describing: snapshot.recovery))）")
+            #expect(snapshot.messages.count == 1, "本地历史应无损呈现")
+
+            // 退化后已新建 session，可正常对话。
+            try await store.send(text: "请只回复两个字：降级")
+            try await waitAssistantCompleted(messages: messages, threadID: thread.id, branchID: nil)
+            return true
+        }
+
+        await client.disconnect()
+    }
+
     // MARK: - G3 辅助
 
     /// 轮询数据库直到指定会话（主线/支线）最后一条 assistant 消息落库为 completed；

@@ -14,6 +14,8 @@ struct BranchConversationApp: App {
     @State private var environment: AppEnvironment?
     @State private var viewModel: MainChatViewModel?
     @State private var branchPanel: BranchPanelViewModel?
+    @State private var conversationTree: ConversationTreeViewModel?
+    @State private var threadList: ThreadListViewModel?
     @State private var startupIssue: StartupIssue?
     @State private var connectionIssue: ConnectionIssue?
     @State private var recoveryObserver: Task<Void, Never>?
@@ -40,6 +42,16 @@ struct BranchConversationApp: App {
                             connectionBanner(connectionIssue)
                         }
                         HStack(spacing: 0) {
+                            // 左栏（M4-002/007）：线程列表 + 对话树。
+                            if let conversationTree, let threadList {
+                                VStack(spacing: 0) {
+                                    ThreadListView(viewModel: threadList)
+                                    Divider()
+                                    ConversationTreeView(viewModel: conversationTree)
+                                }
+                                .frame(minWidth: 200, idealWidth: 230, maxWidth: 280)
+                                Divider()
+                            }
                             MainChatView(viewModel: viewModel)
                             // 右侧支线标签栏（M3-007）：有支线或创建进行中才显示。
                             if let branchPanel, branchPanel.hasVisibleContent {
@@ -98,8 +110,28 @@ struct BranchConversationApp: App {
             panel.onJumpToMainline = { [weak chat] jump in
                 chat?.handleAnchorJump(jump)
             }
+            // 左侧对话树（M4-002/004/005）：点击节点 → 打开右侧标签 + 回跳锚点；
+            // 面板支线集合/激活标签变化 → 树刷新与选中态同步。weak 防循环持有。
+            let tree = ConversationTreeViewModel(
+                branches: env.branches,
+                threads: env.threads,
+                messages: env.messages,
+                conversation: env.conversationStore
+            )
+            tree.onSelectBranch = { [weak panel] branchID in
+                panel?.openFromTree(branchID: branchID)
+                panel?.jumpToAnchor(branchID: branchID)
+            }
+            panel.onBranchesChanged = { [weak tree] in
+                tree?.refresh()
+            }
+            panel.onActiveBranchChanged = { [weak tree] branchID in
+                tree?.selectedBranchID = branchID
+            }
             viewModel = chat
             branchPanel = panel
+            conversationTree = tree
+            threadList = ThreadListViewModel(threads: env.threads, store: env.conversationStore)
             observeRecovery(env)
         } catch {
             // 登录失效（凭据文件在但已过期）以协议错误形态出现，保守识别后引导登录（G1-04）。

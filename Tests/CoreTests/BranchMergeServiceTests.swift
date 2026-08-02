@@ -40,6 +40,8 @@ struct BranchMergeServiceTests {
             if let promptError { throw promptError }
         }
 
+        func loadSession(sessionID: String, cwd: String, owner: SessionStore.Owner) async throws {}
+
         func events(for sessionID: String) async -> AsyncStream<AgentEvent> {
             AsyncStream { _ in }
         }

@@ -22,6 +22,10 @@
   - `session/list`：枚举全部用户会话（含 sessionId/cwd/title/updatedAt）；
   - `session/resume`：成功，返回 configOptions，**不重放历史**；
   - `session/load`：成功，**异步重放历史**（实测 8 条：user_message_chunk/agent_thought_chunk/agent_message_chunk/tool_call/tool_call_update/available_commands_update；响应后陆续到达，客户端须等待聚合）。
+- **2026-08-02 复测补记（CLI 0.31.1，M4-010 落地时实测）**：
+  - `session/load` 的 `mcpServers` **必须出现**（空数组合法）；缺省省略 → `-32602 Invalid params`（`mcpServers: expected array, received undefined`）；
+  - `session/load` 成功响应**不含 `sessionId`**（只回 `configOptions`，与 resume 同形）——acp-swift-sdk 的 `SessionLoad.Result` 非可选 sessionID 无法解码，客户端须自定义方法（Twig 侧为 `TwigSessionLoad`，Core/ACP/Client）；
+  - 兼容矩阵备注：M4 验收期间 CLI 已升至 **0.31.1**（握手/load/降级路径实测行为与 0.31.0 基线一致）。
 - `session/close`、`logout` 未实现 → `-32601 methodNotFound`（含 `data.method`）。自定义 `_probe/bogus` 同样 -32601。未实现方法不会崩连接。
 
 ## 3. 主链路与流式（M1-004）

@@ -32,6 +32,9 @@ public enum ConversationPhase: Sendable, Equatable {
 public protocol ConversationDriver: Sendable {
     /// 为本地归属（thread/branch）创建 ACP session 并登记映射，返回 sessionID。
     func makeSession(cwd: String, owner: SessionStore.Owner) async throws -> String
+    /// 尝试续接既有 session 并登记映射（M4-010）：
+    /// agent 不支持 `session/load` 或 session 已不存在时抛出（调用方走降级路径，REC-02）。
+    func loadSession(sessionID: String, cwd: String, owner: SessionStore.Owner) async throws
     /// 发送 prompt（完成/失败经事件流回传；直接抛出视为发送失败）。
     func sendPrompt(sessionID: String, text: String) async throws
     /// 订阅指定 session 的领域事件流（按 session 路由由 SessionStore 保证）。
@@ -57,12 +60,18 @@ public struct ConversationSnapshot: Sendable, Equatable {
     public var branchID: String?
     public var messages: [Message]
     public var phase: ConversationPhase
+    /// session 恢复状态（M4-010；仅启动恢复/进程重连路径设置，普通激活为 nil）。
+    public var recovery: SessionRecoveryState?
 
-    public init(threadID: String?, branchID: String? = nil, messages: [Message], phase: ConversationPhase) {
+    public init(
+        threadID: String?, branchID: String? = nil, messages: [Message],
+        phase: ConversationPhase, recovery: SessionRecoveryState? = nil
+    ) {
         self.threadID = threadID
         self.branchID = branchID
         self.messages = messages
         self.phase = phase
+        self.recovery = recovery
     }
 }
 
@@ -112,6 +121,8 @@ public actor ConversationStore {
         var toolCallMessageIDs: [String: String] = [:]
         /// 已更新但尚未落库的工具卡片消息 id（与 delta 共用节流节奏）。
         var pendingToolMessageIDs: Set<String> = []
+        /// session 恢复状态（M4-010；仅启动恢复/重连路径设置）。
+        var recovery: SessionRecoveryState?
         var consumptionTask: Task<Void, Never>?
 
         var key: ConversationKey { ConversationKey(threadID: threadID, branchID: branchID) }
@@ -222,7 +233,8 @@ public actor ConversationStore {
             return ConversationSnapshot(threadID: nil, branchID: key.branchID, messages: [], phase: .idle)
         }
         return ConversationSnapshot(
-            threadID: key.threadID, branchID: key.branchID, messages: ctx.messages, phase: ctx.phase
+            threadID: key.threadID, branchID: key.branchID, messages: ctx.messages,
+            phase: ctx.phase, recovery: ctx.recovery
         )
     }
 
@@ -235,15 +247,21 @@ public actor ConversationStore {
 
     /// 启动入口：打开最近线程（无则新建）并激活。
     public func openMostRecentOrCreate(projectRoot: String) async throws {
-        let thread = try threads.listThreads().first
-            ?? threads.createThread(title: "新对话", projectRoot: projectRoot, at: now())
-        try await activate(thread)
+        try await openRestoredOrCreate(projectRoot: projectRoot, lastSelectedThreadID: nil)
     }
 
-    /// 「新对话」按钮：新建线程并激活（旧线程的流式上下文保留，后台继续写入）。
-    public func newConversation(projectRoot: String) async throws {
-        let thread = try threads.createThread(title: "新对话", projectRoot: projectRoot, at: now())
-        try await activate(thread)
+    /// 启动恢复入口（M4-009/010）：优先恢复上次选中线程（存在且有效时），
+    /// 否则打开最近线程，都没有则新建。启动路径对目标线程尝试 session 续接
+    /// （`session/load`，DEC-04 实测支持；失败退化为新建 session + ``SessionRecoveryState/sessionUnavailable``）。
+    public func openRestoredOrCreate(projectRoot: String, lastSelectedThreadID: String?) async throws {
+        let all = try threads.listThreads()
+        if let lastSelectedThreadID, let thread = all.first(where: { $0.id == lastSelectedThreadID }) {
+            try await activate(thread, attemptResume: true)
+        } else if let thread = all.first {
+            try await activate(thread, attemptResume: true)
+        } else {
+            try await newConversation(projectRoot: projectRoot)
+        }
     }
 
     /// 切回已存在的线程（B-M1 最小切换能力；完整多线程归 M4-007）。
@@ -255,7 +273,7 @@ public actor ConversationStore {
         try await activate(thread)
     }
 
-    private func activate(_ thread: ConversationThread) async throws {
+    private func activate(_ thread: ConversationThread, attemptResume: Bool = false) async throws {
         let key = ConversationKey(threadID: thread.id)
         // 已有上下文：先冲刷未落库缓冲再重读，直接复用（session 仍存活则消费循环继续）。
         if var ctx = contexts[key] {
@@ -266,15 +284,46 @@ public actor ConversationStore {
             publish()
             return
         }
-        let sessionID = try await driver.makeSession(cwd: thread.projectRoot, owner: .thread(thread.id))
+        // M4-010 续接策略（已拍板）：仅启动恢复路径尝试 `session/load`；
+        // 失败退化为新建 session（本地历史完整，不做「已续接」假象）。
+        var recovery: SessionRecoveryState?
+        let sessionID: String
+        if attemptResume, let mappedSessionID = thread.acpSessionID {
+            do {
+                try await driver.loadSession(
+                    sessionID: mappedSessionID, cwd: thread.projectRoot, owner: .thread(thread.id)
+                )
+                sessionID = mappedSessionID
+                recovery = .sessionResumed
+            } catch {
+                logger.warning("session 续接失败，退化新建（\(error.localizedDescription)）")
+                sessionID = try await driver.makeSession(cwd: thread.projectRoot, owner: .thread(thread.id))
+                recovery = .sessionUnavailable
+            }
+        } else {
+            sessionID = try await driver.makeSession(cwd: thread.projectRoot, owner: .thread(thread.id))
+            recovery = attemptResume ? .localHistoryAvailable : nil
+        }
         var ctx = ThreadContext(
             threadID: thread.id, branchID: nil, projectRoot: thread.projectRoot, sessionID: sessionID
         )
         ctx.messages = try messages.messages(threadID: thread.id)
+        ctx.recovery = recovery
         contexts[key] = ctx
         activeThreadID = thread.id
         await startConsumption(key: key)
         publish()
+    }
+
+    /// 「新对话」按钮：新建线程并激活（旧线程的流式上下文保留，后台继续写入）。
+    /// `title` 为空时用默认标题（M4-007：首条问题自动生成标题，见 ``send(key:text:metadata:)``）。
+    public func newConversation(title: String? = nil, projectRoot: String) async throws {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let thread = try threads.createThread(
+            title: trimmed.isEmpty ? Self.defaultThreadTitle : trimmed,
+            projectRoot: projectRoot, at: now()
+        )
+        try await activate(thread)
     }
 
     // MARK: - 支线打开（M3-008）
@@ -349,6 +398,13 @@ public actor ConversationStore {
             status: .completed, createdAt: date, updatedAt: date, metadataJSON: metadataJSON
         )
         try messages.insert(userMessage)
+        // M4-007（DEC-10）：默认标题的主线在首条问题落库后自动生成标题（截 20 字）。
+        if key.branchID == nil, userMessage.sequence == 1 {
+            let current = try? threads.listThreads().first(where: { $0.id == key.threadID })
+            if let thread = current ?? nil, thread.title == Self.defaultThreadTitle {
+                try? threads.renameThread(id: key.threadID, title: String(trimmed.prefix(20)))
+            }
+        }
         let placeholder = Message(
             id: UUID().uuidString, threadID: key.threadID, branchID: key.branchID,
             role: .assistant, content: "",
@@ -477,6 +533,7 @@ public actor ConversationStore {
             let owner: SessionStore.Owner = ctx.branchID.map { .branch($0) } ?? .thread(key.threadID)
             let sessionID = try await driver.makeSession(cwd: ctx.projectRoot, owner: owner)
             ctx.sessionID = sessionID
+            ctx.recovery = .sessionRecreated
             contexts[key] = ctx
             await startConsumption(key: key)
         }
@@ -719,6 +776,9 @@ public actor ConversationStore {
         guard let data = try? JSONEncoder().encode(record) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    /// 新建线程的默认标题（M4-007：首条问题落库后自动替换为问题摘要）。
+    static let defaultThreadTitle = "新对话"
 
     /// 日志标签（脱敏仅前缀；区分主线/支线）。
     private static func logLabel(_ key: ConversationKey) -> String {

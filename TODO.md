@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**Gate G3 已通过**（B-M3 收官，2026-08-02）：DEC-05/06/07 全部关闭（ADR-003 锚点坐标 + migration v2；压缩阈值 32_000 字符；临时独立摘要 session）→ 选区监听/追问入口/右侧标签栏/三级嵌套/引文回跳/回流幂等全落地，BR-01~18 逐条有证据（fake 全量 + 真实 CLI 4 轮约 14 次最小化 prompt），199 测试全绿，证据见 `doc/G3-验收报告.md`——下一项 `39. M4-001` 树查询与环/孤儿保护（B-M4 开工；DEC-09 同级排序须在任务 44 前关闭、DEC-10 须在任务 45 前关闭）
+**▶ 当前进度**：**Gate G4 已通过**（B-M4 收官，2026-08-02，分支 `feat/bm4-tree`）：DEC-09/10 关闭（同级最近活动降序；多线程最低集合+重命名）→ 树构建（环/孤儿保护）/左栏树 UI/树→标签→回跳联动/多主线程（创建/列表/切换/重命名/自动标题）/跨线程流式隔离/启动恢复+session/load 续接四态全落地，TREE/THREAD/REC 逐条有证据（fake 全量 + 真实 CLI REC-01/02），236 测试全绿，证据见 `doc/G4-验收报告.md`——下一项 `50. M4-012` 全量回归与候选构建（RC 冻结）
 
 ---
 
@@ -169,26 +169,37 @@
 
 > 阶段目标：本地线程/支线/锚点组织成可导航树；重启后结构不丢。
 
-- [ ] 39. **M4-001** 树查询与环/孤儿保护（无效 parent_branch_id 检测记录、不无限递归；流式 delta 不触发整树重建）｜ 依赖：M3-009 ｜ 输出：树模型
-- [ ] 40. **M4-002** 左侧卡片式缩进树（根=主线程，支线缩进挂父节点；折叠只隐藏不改数据）｜ 依赖：M4-001 ｜ 输出：树 UI
-- [ ] 41. **M4-003** 节点卡片信息（首问摘要/轮数/时间/open/merged/closed/已回流/选中态；空摘要用锚点引文占位）｜ 依赖：M4-001/002 ｜ 输出：节点信息
-- [ ] 42. **M4-004** 树节点 → 支线标签联动（点击激活/打开对应右侧标签）｜ 依赖：M3-007/M4-002 ｜ 输出：导航
-- [ ] 43. **M4-005** 树 → 原文回跳高亮（与引文点击行为一致；高亮后不改写选区）｜ 依赖：M3-010/M4-004 ｜ 输出：核心体验
-- [ ] ⬦ DEC-09：同级排序规则（建议创建时间或最近活动）→ **免 ADR**，决策直接记入任务 44 备注（B-M4 前关闭）
-- [ ] 44. **M4-006** 同级排序落地 ｜ 依赖：M4-001 ｜ 输出：固定规则
-- [ ] ⬦ DEC-10：多主线程第一阶段操作集合（最低：创建/列表/切换/独立 root/最近排序/恢复选中）→ **免 ADR**，决策直接记入任务 45 备注（B-M4 前关闭）
-- [ ] 45. **M4-007** 主线程创建、列表、切换（每线程独立 project_root、session 映射、消息与支线树）｜ 依赖：M1-010/011 ｜ 输出：多线程基础
-- [ ] 46. **M4-008** 跨线程流式事件隔离（快速切换不串线）｜ 依赖：M4-007 ｜ 输出：路由安全
-- [ ] 47. **M4-009** 启动恢复本地状态（migration → 读库 → 还原左树/主对话/右侧栏 → 恢复上次选中线程）｜ 依赖：M4-001/007 ｜ 输出：本地恢复
-- [ ] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
-- [ ] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
+- [x] 39. **M4-001** 树查询与环/孤儿保护（无效 parent_branch_id 检测记录、不无限递归；流式 delta 不触发整树重建）｜ 依赖：M3-009 ｜ 输出：树模型
+  - 完成：`BranchTreeBuilder` 纯函数构建（`BranchTree`/`BranchTreeNode`/`BranchTreeIssue`，先序展平供 UI）；孤儿挂根+记录、成环截断+记录不无限递归、环后代不丢；同级排序已按 DEC-09 定稿实现（见任务 44）；10 测试全绿
+- [x] 40. **M4-002** 左侧卡片式缩进树（根=主线程，支线缩进挂父节点；折叠只隐藏不改数据）｜ 依赖：M4-001 ｜ 输出：树 UI
+  - 完成：`ConversationTreeViewModel`（refresh 读库建树、支线集合无变化跳过重建、折叠仅内存过滤 visibleNodes）+ `ConversationTreeView`（根卡片/depth*14 缩进/chevron 折叠/三栏布局接入 App）；TREE-05 有测试
+- [x] 41. **M4-003** 节点卡片信息（首问摘要/轮数/时间/open/merged/closed/已回流/选中态；空摘要用锚点引文占位）｜ 依赖：M4-001/002 ｜ 输出：节点信息
+  - 完成：`CardInfo`（摘要复用面板 title 派生含引文兜底、roundCount、lastActivity、状态徽标、mergedBack=merge_note_id 非空、orphan 警示）；卡片含选中态高亮；8 测试全绿
+- [x] 42. **M4-004** 树节点 → 支线标签联动（点击激活/打开对应右侧标签）｜ 依赖：M3-007/M4-002 ｜ 输出：导航
+  - 完成：面板新增 `openFromTree`（closed 支线经 forceOpenedIDs 临时可见不改 status）+ `onBranchesChanged`/`onActiveBranchChanged` 出口；App 层接线树点击 → openFromTree + 选中态双向同步
+- [x] 43. **M4-005** 树 → 原文回跳高亮（与引文点击行为一致；高亮后不改写选区）｜ 依赖：M3-010/M4-004 ｜ 输出：核心体验
+  - 完成：App 层 `tree.onSelectBranch` 编排 = openFromTree + `jumpToAnchor`（复用 M3-010 AnchorResolver 三级降级 + 滚动高亮管线，嵌套锚点降级切父标签一致）；高亮不改写选区由 G3 已验的渐隐高亮机制保证；重渲染定位靠 ADR-003 坐标+hash 双保险（TREE-07/08 数据面）
+- [x] ⬦ DEC-09：同级排序规则（2026-08-02 拍板）：**同级按最近活动 updated_at 降序，并列按 created_at 升序、id 升序兜底**；数据前提＝支线消息落库同事务触碰 branches.updated_at（流式 delta 不触碰）→ 免 ADR，决策记录于此
+- [x] 44. **M4-006** 同级排序落地 ｜ 依赖：M4-001 ｜ 输出：固定规则
+  - 完成：`BranchTreeBuilder` siblingOrder 按 DEC-09 实现（BuilderTests「DEC-09 同级排序」+ TreeVMTests「消息落库触碰 updated_at」双证据）
+- [x] ⬦ DEC-10：多主线程第一阶段操作集合（2026-08-02 拍板）：**创建（标题可空，首条问题自动生成）/列表/切换/独立 root/最近活动排序/恢复选中/重命名**；删除/归档/跨线程移动支线/合并线程不做 → 免 ADR，决策记录于此
+- [x] 45. **M4-007** 主线程创建、列表、切换（每线程独立 project_root、session 映射、消息与支线树）｜ 依赖：M1-010/011 ｜ 输出：多线程基础
+  - 完成：`ThreadListViewModel`+`ThreadListView`（左栏顶部：最近活动列表/点击切换/「+」新建 sheet 含 project_root 文件夹选取/双击就地重命名）；`renameThread` 不触碰 updated_at；`newConversation(title:)` + 默认标题首问自动改名（截 20 字）；7 测试全绿
+- [x] 46. **M4-008** 跨线程流式事件隔离（快速切换不串线）｜ 依赖：M4-007 ｜ 输出：路由安全
+  - 完成：THREAD-02 压测——乙流式中甲↔乙反复切换、双线并发 delta/completed 各自落库不串字、切回快照完整（ConversationKey 路由结构性保证，G1-06 之上的快速切换补强）
+- [x] 47. **M4-009** 启动恢复本地状态（migration → 读库 → 还原左树/主对话/右侧栏 → 恢复上次选中线程）｜ 依赖：M4-001/007 ｜ 输出：本地恢复
+  - 完成：`SelectedThreadStore`（UserDefaults 单键，ThreadListVM 快照同步时写入）+ `openRestoredOrCreate`（上次选中 → 最近线程 → 新建三级回退，THREAD-04）；左树/右栏随快照 threadID 订阅自动还原（既有机制）
+- [x] 48. **M4-010** ACP session 恢复/降级（区分 localHistoryAvailable/sessionResumed/sessionUnavailable/sessionRecreated；不制造「已续接」假象）｜ 依赖：M1-006/M4-009 ｜ 输出：续接策略
+  - 完成：按拍板策略仅启动路径对目标线程尝试 `session/load`（ACPClient.loadSession + supportsLoadSession 能力门 + LiveConversationDriver 500ms 安静窗口吞异步重放防重复工具卡片）；失败退化新建 + sessionUnavailable；renewSessions 标 sessionRecreated；`SessionRecoveryState` 随快照下发 + 主对话可关闭横幅四态文案；7 测试全绿（REC-01/02/04 数据面 + THREAD-04）
+- [x] 49. **M4-011** TREE/THREAD/REC 全量测试 ｜ 依赖：全部 ｜ 输出：G4 证据
+  - 完成：G4MatrixTests 补洞（TREE-03 集成点击→激活+回跳、REC-03 损坏库不损原文件+migration 幂等）+ 真实 CLI 两例（`sessionResumeRealCLI` REC-01、`sessionResumeUnavailableRealCLI` REC-02，约 5 次最小化 prompt 含排障复测，用户批准）→ `doc/G4-验收报告.md`，236 全绿；排坑：kimi 0.31.1 session/load 需 mcpServers 必填且响应无 sessionId → 自定义 TwigSessionLoad（协议事实补记 g0-findings §2，工程笔记）
 
-### Gate G4 测试矩阵（§8.6）
-- [ ] TREE-01 一级支线挂根 ｜ TREE-02 多级缩进 ｜ TREE-03 点击激活+回跳 ｜ TREE-04 已回流节点标记
-- [ ] TREE-05 折叠展开不改数据 ｜ TREE-06 异常父 id 不崩不环 ｜ TREE-07 重复锚点定位/降级 ｜ TREE-08 重渲染后回跳有效
-- [ ] THREAD-01 双线程独立 ｜ THREAD-02 快速切换不串线 ｜ THREAD-03 各自 project_root ｜ THREAD-04 重启恢复选中态
-- [ ] REC-01 ACP 支持恢复→续接成功 ｜ REC-02 不支持→降级路径明确 ｜ REC-03 迁移失败不损原库 ｜ REC-04 子进程重启后 UI 与能力一致
-- [ ] G4 附加：树与 parent_branch_id 完全一致；session 恢复能力与 UI 表述一致
+### Gate G4 测试矩阵（§8.6）✅ 已通过（2026-08-02，证据见 `doc/G4-验收报告.md`）
+- [x] TREE-01 一级支线挂根 ｜ TREE-02 多级缩进 ｜ TREE-03 点击激活+回跳 ｜ TREE-04 已回流节点标记
+- [x] TREE-05 折叠展开不改数据 ｜ TREE-06 异常父 id 不崩不环 ｜ TREE-07 重复锚点定位/降级 ｜ TREE-08 重渲染后回跳有效
+- [x] THREAD-01 双线程独立 ｜ THREAD-02 快速切换不串线 ｜ THREAD-03 各自 project_root ｜ THREAD-04 重启恢复选中态
+- [x] REC-01 ACP 支持恢复→续接成功 ｜ REC-02 不支持→降级路径明确 ｜ REC-03 迁移失败不损原库 ｜ REC-04 子进程重启后 UI 与能力一致
+- [x] G4 附加：树与 parent_branch_id 完全一致；session 恢复能力与 UI 表述一致
 
 - [ ] 50. **M4-012** 全量回归与候选构建（RC 前冻结：schema/协议映射/allowlist/版本/文案/范围）｜ 依赖：全部 ｜ 输出：RC
 

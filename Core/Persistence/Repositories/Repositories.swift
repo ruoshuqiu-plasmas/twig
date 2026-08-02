@@ -41,6 +41,19 @@ public struct ThreadRepository: Sendable {
         }
     }
 
+    /// 重命名线程（DEC-10 第一阶段操作集合；不影响 updated_at 排序——
+    /// 重命名不是对话活动，不应把线程顶到最近活动首位）。
+    public func renameThread(id: String, title: String, at date: Date = Date()) throws {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try db.write { db in
+            try db.execute(
+                sql: "UPDATE threads SET title = ? WHERE id = ?",
+                arguments: [trimmed, id]
+            )
+        }
+    }
+
     /// 更新线程活动时间的内部语句（MessageRepository 写入时同事务调用）。
     static func touchThread(_ db: Database, threadID: String, at date: Date) throws {
         try db.execute(
@@ -123,11 +136,19 @@ public struct MessageRepository: Sendable {
         }
     }
 
-    /// 插入消息（§5.7：发送即存 / 流式占位），同事务触碰线程活动时间。
+    /// 插入消息（§5.7：发送即存 / 流式占位），同事务触碰线程活动时间；
+    /// 支线消息一并触碰支线 updated_at（DEC-09 同级「最近活动」排序的数据前提；
+    /// 流式 delta 走 ``appendContent`` 不触碰，避免每条 delta 触发树重建）。
     public func insert(_ message: Message) throws {
         try db.write { db in
             try message.insert(db)
             try ThreadRepository.touchThread(db, threadID: message.threadID, at: message.updatedAt)
+            if let branchID = message.branchID {
+                try db.execute(
+                    sql: "UPDATE branches SET updated_at = ? WHERE id = ?",
+                    arguments: [message.updatedAt, branchID]
+                )
+            }
         }
     }
 

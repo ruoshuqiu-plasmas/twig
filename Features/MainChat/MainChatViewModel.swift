@@ -38,6 +38,8 @@ public final class MainChatViewModel {
     public var input: String = ""
     /// 简版错误条（三态引导页归 M1-013）。
     public var errorBanner: String?
+    /// session 恢复状态提示（M4-010；与真实续接能力一致，可手动关闭）。
+    public var recoveryBanner: String?
     /// 当前有效选区快照（任务 M3-001）：assistant 稳定态消息/工具结果的
     /// SelectableMessageText 选区变化时写入；nil 表示无有效选区。
     public var currentSelection: SelectionSnapshot?
@@ -68,12 +70,19 @@ public final class MainChatViewModel {
     private let store: ConversationStore
     /// B-M1 临时方案：新线程的 project_root 取进程工作目录（M4-007 再提供选择入口）。
     private let projectRoot: String
+    /// 上次选中线程持久化（M4-009，启动恢复入口读取）。
+    private let selectedThreads: SelectedThreadStore
     private var snapshotTask: Task<Void, Never>?
     private var highlightTask: Task<Void, Never>?
 
-    public init(store: ConversationStore, projectRoot: String) {
+    public init(
+        store: ConversationStore,
+        projectRoot: String,
+        selectedThreads: SelectedThreadStore = SelectedThreadStore()
+    ) {
         self.store = store
         self.projectRoot = projectRoot
+        self.selectedThreads = selectedThreads
     }
 
     /// 是否可发送（流式中禁发，双保险之一；store 内同样拦截）。
@@ -91,7 +100,10 @@ public final class MainChatViewModel {
             }
         }
         do {
-            try await store.openMostRecentOrCreate(projectRoot: projectRoot)
+            // M4-009/010：恢复上次选中线程并尝试 session 续接（无记录/失效则最近线程，都没有则新建）。
+            try await store.openRestoredOrCreate(
+                projectRoot: projectRoot, lastSelectedThreadID: selectedThreads.load()
+            )
         } catch {
             // 登录失效（凭据文件在但已过期）在 session 创建时才暴露，保守识别后引导登录（G1-04）。
             errorBanner = StartupIssue.isAuthRelated(errorMessage: error.localizedDescription)
@@ -214,5 +226,23 @@ public final class MainChatViewModel {
         messages = snapshot.messages
         phase = snapshot.phase
         threadID = snapshot.threadID
+        // M4-010：恢复状态与真实能力一致的文案（不制造「已续接」假象）。
+        if let recovery = snapshot.recovery {
+            recoveryBanner = Self.recoveryText(recovery)
+        }
+    }
+
+    /// 恢复状态 → 用户可见文案（§8.5 四态）。
+    static func recoveryText(_ state: SessionRecoveryState) -> String {
+        switch state {
+        case .sessionResumed:
+            return "已续接上次会话（agent 侧历史已恢复）"
+        case .localHistoryAvailable:
+            return "已恢复本地历史（当前为新会话）"
+        case .sessionUnavailable:
+            return "原会话不可续接：本地历史已保留，继续对话将使用新会话"
+        case .sessionRecreated:
+            return "连接已重建：本地历史完整，当前为新会话"
+        }
     }
 }
