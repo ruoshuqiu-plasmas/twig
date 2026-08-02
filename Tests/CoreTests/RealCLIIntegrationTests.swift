@@ -3,7 +3,8 @@ import Testing
 @testable import Core
 import Shared
 
-/// G1 真实 CLI 集成验收（任务 M1-014）：真实 `kimi acp` 子进程上的主对话闭环与跨线程路由。
+/// G1/G2/G3 真实 CLI 集成验收：真实 `kimi acp` 子进程上的主对话闭环、跨线程路由、
+/// 只读策略端到端与支线全生命周期（创建/追问/嵌套/摘要/回流）。
 ///
 /// **消耗会员额度，默认不跑**：仅当环境变量 `TWIG_REAL_CLI=1` 时执行
 /// （`TWIG_REAL_CLI=1 swift test --filter RealCLI`）。每个 Gate 至少跑一次，
@@ -139,5 +140,313 @@ struct RealCLIIntegrationTests {
         }
 
         await client.disconnect()
+    }
+
+    // MARK: - G3 支线验收（M3-014；BR-05/08/09/10/13/14）
+
+    /// G3 真实支线全生命周期验收：一条主线生命周期内串起
+    /// BR-05/08（开支线 + 支线内追问，历史各自独立）、BR-09（二级嵌套支线，祖先链进播种）、
+    /// BR-13/14（真实摘要回流 + 幂等二次合并）。prompt 全部最小化（≤10 字回答），
+    /// 共 6 次真实请求（主线 1 + 支线播种 1 + 支线追问 1 + 嵌套播种 1 + 回流摘要 1 + 回流注入 1）。
+    @Test("真实 CLI：支线创建/追问/嵌套/回流全生命周期（BR-05/08/09/13/14）")
+    func branchLifecycleRealCLI() async throws {
+        guard enabled else { return }
+
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("twig-g3-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let branches = BranchRepository(appDB)
+        let notes = BranchNoteRepository(appDB)
+        let supervisor = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client = ACPClient(supervisor: supervisor)
+        let sessionStore = SessionStore(mappingStore: threads)
+        let store = ConversationStore(
+            threads: threads,
+            messages: messages,
+            driver: LiveConversationDriver(client: client, sessionStore: sessionStore)
+        )
+        let summarizer = ACPSummarizer(client: client, sessionStore: sessionStore, cwd: sandbox.path)
+        let assembler = BranchContextAssembler(
+            messages: messages, branches: branches, notes: notes, summarizer: summarizer
+        )
+        let coordinator = BranchSessionCoordinator(
+            assembler: assembler, branches: branches, conversation: store
+        )
+        let mergeService = BranchMergeService(
+            branches: branches, notes: notes, messages: messages,
+            summarizer: summarizer, conversation: store
+        )
+
+        _ = try await withTimeout(seconds: 600, operation: "G3 真实支线生命周期验收") {
+            await sessionStore.attach(to: client)
+            try await client.connect()
+
+            // 主线发一条消息得到回答（BR-05 前置）。
+            try await store.openMostRecentOrCreate(projectRoot: sandbox.path)
+            try await store.send(text: "请用不超过10个字回答：什么是队列？")
+            let threadID = try #require(await store.currentSnapshot().threadID)
+            try await waitAssistantCompleted(messages: messages, threadID: threadID, branchID: nil)
+            let mainAssistant = try #require(
+                try messages.messages(threadID: threadID).last { $0.role == .assistant },
+                "主线应有 assistant 回答（thread=\(threadID.prefix(8))…）"
+            )
+            #expect(!mainAssistant.content.isEmpty, "主线回答不应为空")
+
+            // BR-05：对主线回答开支线（coordinator 全编排到 ready）。
+            let quote1 = mainAssistant.content
+            let request1 = BranchCreationRequest(
+                requestID: UUID().uuidString,
+                threadID: threadID,
+                parentBranchID: nil,
+                snapshot: SelectionSnapshot(
+                    messageID: mainAssistant.id, quote: quote1, start: 0, length: quote1.utf16.count
+                ),
+                anchorPlainText: mainAssistant.content,
+                userQuestion: "请用不超过10个字总结这段回答",
+                projectRoot: sandbox.path
+            )
+            if let failure = await awaitReady(coordinator.startCreation(request1), label: "一级支线") {
+                Issue.record("一级支线创建失败：\(failure)")
+                return false
+            }
+            let branch1 = try #require(
+                try branches.listBranches(threadID: threadID).first,
+                "branches 应有一级支线行（thread=\(threadID.prefix(8))…）"
+            )
+
+            // BR-05：独立 acp_session_id（≠主线）、seedContext 非空、首轮回答落库带 branchID。
+            let registrations = await sessionStore.allRegistrations()
+            let mainSession = registrations.first { $0.owner == .thread(threadID) }?.sessionID
+            let branch1Session = try #require(
+                branch1.acpSessionID,
+                "一级支线应有 acp_session_id（branch=\(branch1.id.prefix(8))…）"
+            )
+            #expect(branch1Session != mainSession, "支线 session 必须独立于主线（\(branch1Session.prefix(8))…）")
+            #expect(registrations.contains { $0.owner == .branch(branch1.id) },
+                    "SessionStore 应有一级支线映射（branch=\(branch1.id.prefix(8))…）")
+            let seed1 = try #require(branch1.seedContext, "一级支线 seedContext 不应为空")
+            #expect(seed1.contains(quote1), "seedContext 应含锚点引文原文")
+            let branch1Answer = try #require(
+                try messages.messages(threadID: threadID, branchID: branch1.id)
+                    .last { $0.role == .assistant && $0.status == .completed },
+                "支线首轮回答应落库（branch=\(branch1.id.prefix(8))…）"
+            )
+            #expect(branch1Answer.branchID == branch1.id && !branch1Answer.content.isEmpty,
+                    "支线首轮回答应带 branchID 且非空")
+
+            // BR-08：支线内再追问一轮；历史只累积支线、主线不受影响。
+            let mainlineCountBefore = try messages.messages(threadID: threadID).count
+            try await store.sendBranchMessage(branchID: branch1.id, text: "请用不超过10个字再补充一点")
+            try await waitAssistantCompleted(
+                messages: messages, threadID: threadID, branchID: branch1.id
+            )
+            let branch1Messages = try messages.messages(threadID: threadID, branchID: branch1.id)
+            #expect(branch1Messages.filter { $0.role == .user }.count >= 2,
+                    "支线追问后应有 ≥2 条支线 user 消息（branch=\(branch1.id.prefix(8))…）")
+            let mainlineAfterFollowUp = try messages.messages(threadID: threadID)
+            #expect(mainlineAfterFollowUp.count == mainlineCountBefore,
+                    "支线追问不得写主线（前 \(mainlineCountBefore) 后 \(mainlineAfterFollowUp.count)）")
+            #expect(!mainlineAfterFollowUp.contains { $0.content.contains("再补充") },
+                    "支线追问文本不得出现在主线")
+
+            // BR-09：对支线内回答再开一层嵌套支线（两级真实，三级归 fake 层）。
+            let branch1LastAnswer = try #require(
+                branch1Messages.last { $0.role == .assistant && $0.status == .completed },
+                "支线应有两轮回答（branch=\(branch1.id.prefix(8))…）"
+            )
+            let quote2 = branch1LastAnswer.content
+            let request2 = BranchCreationRequest(
+                requestID: UUID().uuidString,
+                threadID: threadID,
+                parentBranchID: branch1.id,
+                snapshot: SelectionSnapshot(
+                    messageID: branch1LastAnswer.id, quote: quote2, start: 0, length: quote2.utf16.count
+                ),
+                anchorPlainText: branch1LastAnswer.content,
+                userQuestion: "请用不超过10个字概括这句话",
+                projectRoot: sandbox.path
+            )
+            if let failure = await awaitReady(coordinator.startCreation(request2), label: "嵌套支线") {
+                Issue.record("嵌套支线创建失败：\(failure)")
+                return false
+            }
+            let branch2 = try #require(
+                try branches.childBranches(parentBranchID: branch1.id).first,
+                "应有嵌套支线下挂一级支线（parent=\(branch1.id.prefix(8))…）"
+            )
+            #expect(branch2.parentBranchID == branch1.id, "嵌套支线 parentBranchID 应指向一级支线")
+            #expect(branch2.acpSessionID != nil && branch2.acpSessionID != branch1Session,
+                    "嵌套支线应有独立 session（branch=\(branch2.id.prefix(8))…）")
+            let seed2 = try #require(branch2.seedContext, "嵌套支线 seedContext 不应为空")
+            #expect(seed2.contains("[祖先支线]"), "嵌套播种应含祖先支线段")
+            #expect(seed2.contains(branch1.anchorQuote),
+                    "祖先链应含父级锚点引文（parent anchor=\(branch1.anchorQuote.prefix(12))…）")
+
+            // BR-13：对 ready 支线真实回流（摘要 + 四行注入消息 + status=merged）。
+            let mergeResult = try await mergeService.merge(branchID: branch1.id)
+            guard case .merged(let noteID, let injectedToACP) = mergeResult else {
+                Issue.record("首次回流应为 .merged，实际 \(mergeResult)（branch=\(branch1.id.prefix(8))…）")
+                return false
+            }
+            // injectedToACP 如实记录：主线空闲时预期 true；失败即 §7.8 中间态，不判失败。
+            let note = try #require(
+                try notes.note(forBranch: branch1.id),
+                "回流后应有 branch_notes 行（note=\(noteID.prefix(8))…）"
+            )
+            #expect(note.id == noteID && !note.summary.isEmpty, "回流笔记应有摘要内容")
+            let mergedBranch1 = try #require(try branches.branch(id: branch1.id))
+            #expect(mergedBranch1.status == .merged, "回流后支线状态应为 merged")
+            let mainlineMerged = try messages.messages(threadID: threadID)
+            let mergeNotices = mainlineMerged.filter {
+                $0.kind == .notice && $0.content.contains("[支线回流笔记]")
+            }
+            let notice = try #require(mergeNotices.first, "主线应有四行回流注入消息")
+            #expect(notice.content.contains("来源支线：\(branch1.id.prefix(8))"),
+                    "注入消息第二行应含支线 id 前缀")
+            #expect(notice.content.contains("锚点：\(branch1.anchorQuote)"), "注入消息应含锚点行")
+            #expect(notice.content.contains("结论："), "注入消息应含结论行")
+            let metadata = BranchMergeService.decodeMetadata(notice.metadataJSON)
+            #expect(metadata["injectedToACP"] == (injectedToACP ? "true" : "false"),
+                    "metadata 的 injectedToACP 应与回流结果一致（实际 \(injectedToACP)）")
+
+            // BR-14：二次 merge 幂等短路，不产生重复笔记/消息。
+            let secondMerge = try await mergeService.merge(branchID: branch1.id)
+            guard case .alreadyMerged = secondMerge else {
+                Issue.record("二次回流应为 .alreadyMerged，实际 \(secondMerge)")
+                return false
+            }
+            #expect(try notes.listNotes(threadID: threadID).count == 1, "二次回流不得产生重复笔记")
+            #expect(
+                try messages.messages(threadID: threadID)
+                    .filter { $0.kind == .notice && $0.content.contains("[支线回流笔记]") }.count == 1,
+                "二次回流不得产生重复注入消息"
+            )
+            return true
+        }
+
+        await client.disconnect()
+    }
+
+    /// BR-10 真实摘要路径：Assembler 注入极小 compressionThreshold 强制走摘要，
+    /// 真实 ACPSummarizer 跑临时独立 session；断言 usedSummary、锚点/追问原文不改写、
+    /// 临时 session 映射已摘除。共 2 次真实请求（主线 1 + 摘要 1）。
+    @Test("真实 CLI：背景超阈值走真实摘要压缩（BR-10）")
+    func summaryPathRealCLI() async throws {
+        guard enabled else { return }
+
+        let sandbox = FileManager.default.temporaryDirectory
+            .appendingPathComponent("twig-g3sum-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let appDB = try AppDatabase.makeInMemory()
+        let threads = ThreadRepository(appDB)
+        let messages = MessageRepository(appDB)
+        let branches = BranchRepository(appDB)
+        let notes = BranchNoteRepository(appDB)
+        let supervisor = ACPProcessSupervisor(
+            configuration: SupervisorConfiguration(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
+        )
+        let client = ACPClient(supervisor: supervisor)
+        let sessionStore = SessionStore(mappingStore: threads)
+        let store = ConversationStore(
+            threads: threads,
+            messages: messages,
+            driver: LiveConversationDriver(client: client, sessionStore: sessionStore)
+        )
+        let summarizer = ACPSummarizer(client: client, sessionStore: sessionStore, cwd: sandbox.path)
+        // 极小阈值强制摘要路径（BR-10）。
+        let assembler = BranchContextAssembler(
+            messages: messages, branches: branches, notes: notes,
+            summarizer: summarizer, compressionThreshold: 200
+        )
+
+        _ = try await withTimeout(seconds: 240, operation: "BR-10 真实摘要验收") {
+            await sessionStore.attach(to: client)
+            try await client.connect()
+
+            // 主线一轮：user 问题 >200 字符，使背景（锚点之前的主线问答）超阈值。
+            let filler = String(repeating: "队列是一种先进先出的数据结构，常用于任务调度与消息传递。", count: 9)
+            try await store.openMostRecentOrCreate(projectRoot: sandbox.path)
+            try await store.send(text: "背景：\(filler) 请用不超过10个字回答这段背景的主题是什么。")
+            let threadID = try #require(await store.currentSnapshot().threadID)
+            try await waitAssistantCompleted(messages: messages, threadID: threadID, branchID: nil)
+            let mainAssistant = try #require(
+                try messages.messages(threadID: threadID).last { $0.role == .assistant },
+                "主线应有 assistant 回答（thread=\(threadID.prefix(8))…）"
+            )
+
+            // 直接走 Assembler（usedSummary 仅其返回值可观测；摘要器为真实 ACPSummarizer）。
+            let quote = mainAssistant.content
+            let question = "请用不超过10个字总结这段回答"
+            let assembled = try await assembler.assemble(
+                threadID: threadID,
+                parentBranchID: nil,
+                anchorMessageID: mainAssistant.id,
+                anchorQuote: quote,
+                userQuestion: question
+            )
+
+            // BR-10：usedSummary=true、摘要产物进 seedContext、锚点与追问原文未改写。
+            #expect(assembled.usedSummary, "背景超阈值应走摘要路径（原始 \(assembled.originalBackgroundLength) 字符）")
+            #expect(assembled.originalBackgroundLength > 200, "背景应确实超阈值 200")
+            #expect(assembled.summaryNote != nil, "应有摘要说明（原始范围与压缩事实）")
+            #expect(assembled.seedContext.contains(quote), "锚点引文原文不得改写：\(quote)")
+            #expect(assembled.seedContext.contains(question), "用户追问原文不得改写：\(question)")
+            #expect(assembled.seedContext.contains("[背景上下文]"), "seedContext 应含背景段（摘要产物所在）")
+
+            // DEC-06：临时摘要 session 映射已摘除（合成 owner 无残留注册）。
+            let registrations = await sessionStore.allRegistrations()
+            #expect(!registrations.contains { $0.owner == .branch("summarizer-temp") },
+                    "临时摘要 session 映射应已摘除，实际残留：\(registrations.map { "\($0.owner)" })")
+            return true
+        }
+
+        await client.disconnect()
+    }
+
+    // MARK: - G3 辅助
+
+    /// 轮询数据库直到指定会话（主线/支线）最后一条 assistant 消息落库为 completed；
+    /// failed 立即报错（附会话定位信息）。整体超时由外层 withTimeout 兜底。
+    private func waitAssistantCompleted(
+        messages: MessageRepository, threadID: String, branchID: String?
+    ) async throws {
+        let scope = branchID.map { "branch=\($0.prefix(8))…" } ?? "主线 thread=\(threadID.prefix(8))…"
+        while true {
+            let last = try messages.messages(threadID: threadID, branchID: branchID)
+                .last { $0.role == .assistant }
+            if last?.status == .completed { return }
+            try #require(last?.status != .failed, "\(scope) 对话不应失败")
+            try await Task.sleep(for: .milliseconds(150))
+        }
+    }
+
+    /// 等待支线创建状态机到 ready；失败返回可读原因（含步骤定位），流随 break 终止。
+    private func awaitReady(
+        _ stream: AsyncStream<BranchCreationState>, label: String
+    ) async -> String? {
+        for await state in stream {
+            switch state {
+            case .ready:
+                return nil
+            case .failed(let retryable, let reason):
+                return "\(label) 进入 failed（\(retryable ? "可重试" : "不可重试")）：\(reason)"
+            default:
+                continue
+            }
+        }
+        return "\(label) 状态流在 ready 前意外终止"
     }
 }

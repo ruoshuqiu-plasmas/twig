@@ -9,7 +9,7 @@
 
 核心特色：**选中 AI 回答或工具调用结果中的任意文字，就地开启支线对话**（独立 ACP session，可嵌套、可将结论回流主线），配合左侧卡片式对话树与右侧支线标签栏。
 
-**当前状态：B-M2 收官、Gate G2 已通过（2026-08-01）：DEC-08 拍板（ADR-002：Highlightr 代码高亮 + swift-markdown 块级解析 + SwiftUI 自渲染），Markdown/代码块/列表/引用块级渲染落地（超长块熔断、失败回退纯文本、全块可选中），SEC-01~14 逐条有证据（含真实 CLI 写拒绝精简验收），110 测试全绿，证据见 `doc/G2-验收报告.md`。** Gate G1 已通过（B-M1 收官，证据见 `doc/G1-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 25（M3-001，B-M3 支线开工；DEC-07 锚点字段决策须在任务 26 前关闭）。
+**当前状态：B-M3 收官、Gate G3 已通过（2026-08-02）：DEC-05/06/07 全部关闭（ADR-003 锚点坐标 + migration v2；压缩阈值 32_000 字符；临时独立摘要 session），支线全链路落地（NSTextView 选区监听 → 追问入口 → BranchContextAssembler 播种 → 独立 session 状态机 → 右侧标签栏 → 三级嵌套 → 引文回跳 → BranchMergeService 回流幂等），BR-01~18 逐条有证据（fake 全量 + 真实 CLI 4 轮验收），199 测试全绿，证据见 `doc/G3-验收报告.md`。** Gate G1/G2 已通过（证据见 `doc/G1-验收报告.md`、`doc/G2-验收报告.md`）。仓库含产品/设计文档、执行清单（TODO.md）、工程笔记、ADR-001/002/003、G0 技术验证（spike）的 Python 探针与协议样本，以及 Swift 6 + SPM 工程（App/Features/Core/Shared 四层；真实 CLI 集成验收套件 `RealCLIIntegrationTests` 仅 `TWIG_REAL_CLI=1` 时执行）。已是 git 仓库并以 MIT 协议开源：<https://github.com/ruoshuqiu-plasmas/twig>。下一项工作是任务 39（M4-001，B-M4 左侧对话树开工；DEC-09/10 须在任务 44/45 前关闭，均免 ADR）。
 
 **第一阶段非目标**（不得混入范围）：任何写能力（改文件、执行终端命令）、多人协作/账号/云同步、Windows/Linux 版、画布式节点图、历史导入、Apple 签名与公证分发。
 
@@ -24,17 +24,20 @@ doc/
 adr/
   ADR-001-acp-client-path.md     已定稿：采用 rebornix/acp-swift-sdk；含锁定版本基线、PoC 结论与回退触发条件
   ADR-002-markdown-rendering.md  已定稿：Highlightr 代码高亮 + swift-markdown 块级解析 + SwiftUI 自渲染；含否决方案与回退触发条件
+  ADR-003-anchor-fields.md       已定稿（DEC-07）：锚点坐标字段（渲染纯文本 Character 偏移 + context hash）与三级降级回跳规则
 Package.swift                    SPM 工程清单（Swift 6，macOS 14+；目标：App/Features/Core/Shared/SchemaPoC）
 Package.resolved                 依赖锁定（acp-swift-sdk @ b800b3f + swift-log + swift-system + GRDB @ 7.11.1 + swift-markdown @ 0.8.0 + Highlightr @ 2.3.0）
-App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI）
-Features/   MainChat/（MainChatView, MainChatViewModel）Settings/（SettingsView 只读策略页）BranchPanel/ ConversationTree/（后两者占位）
+App/        BranchConversationApp.swift, AppEnvironment.swift（@main 入口，SwiftUI；含支线服务装配与惰性摘要器）
+Features/   MainChat/（MainChatView, MainChatViewModel, MessageRow, 追问入口）Settings/（SettingsView 只读策略页）
+            BranchPanel/（BranchPanelView, BranchPanelViewModel 右侧支线标签栏）ConversationTree/（占位，B-M4）
 Core/       ACP/（AgentEvent, Client/Transport/EventAdapter/SessionStore, ToolCallTracker）
             Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
-            Branching/（BranchContextAssembler, BranchMergeService）
-            Persistence/（AppDatabase, Migrations/, Repositories/）
-            Conversation/（ConversationStore 主对话状态机, LiveConversationDriver）
-Shared/     Models/ UIComponents/（ToolCallCard, MarkdownBlockView/CodeBlockView）Markdown/（MarkdownBlockParser, CodeHighlighter）Logging/ TestSupport/
+            Branching/（BranchContextAssembler, ACPSummarizer, BranchSessionCoordinator, BranchMergeService, AnchorResolver, AnchorCoordinates）
+            Persistence/（AppDatabase, Migrations/(v1 四表 + v2 锚点坐标), Repositories/（Thread/Message/Branch/BranchNote））
+            Conversation/（ConversationStore 会话状态机 ConversationKey(threadID,branchID?), LiveConversationDriver）
+Shared/     Models/（含 SelectionSnapshot）UIComponents/（ToolCallCard, SelectableMessageText, MarkdownBlockView/CodeBlockView）
+            Markdown/（MarkdownBlockParser, MarkdownAttributedRenderer, CodeHighlighter）Logging/ TestSupport/
 Tests/
   CoreTests/                     单元测试（swift-testing）；Fixtures/ 为 G0 脱敏样本提取件
 spike/
@@ -54,7 +57,7 @@ Features/   MainChat/ BranchPanel/ ConversationTree/ Settings/
 Core/       ACP/（Client/Transport/EventAdapter/SessionStore）
             Process/（CLIEnvironmentProbe, ACPProcessSupervisor, StartupIssue）
             Policy/（PermissionPolicyEngine）
-            Branching/（BranchContextAssembler, BranchMergeService）
+            Branching/（Assembler/Summarizer/SessionCoordinator/MergeService/AnchorResolver）
             Persistence/（AppDatabase, Migrations, Repositories/）
             Conversation/（ConversationStore, LiveConversationDriver）
 Shared/     Models/ UIComponents/ Markdown/ Logging/ TestSupport/

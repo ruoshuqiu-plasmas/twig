@@ -16,18 +16,41 @@ public final class AppEnvironment: @unchecked Sendable {
     public let sessionStore: SessionStore
     public let conversationStore: ConversationStore
 
+    // MARK: - 支线服务装配（B-M3，M3-003/007 起供 View 层使用）
+
+    public let threads: ThreadRepository
+    public let messages: MessageRepository
+    public let branches: BranchRepository
+    public let branchNotes: BranchNoteRepository
+    /// 支线创建状态机（追问入口与右侧标签栏共用）。
+    public let branchCoordinator: BranchSessionCoordinator
+    /// 支线结论回流服务（合并回主线）。
+    public let branchMergeService: BranchMergeService
+
     private init(
         database: AppDatabase,
         supervisor: ACPProcessSupervisor,
         client: ACPClient,
         sessionStore: SessionStore,
-        conversationStore: ConversationStore
+        conversationStore: ConversationStore,
+        threads: ThreadRepository,
+        messages: MessageRepository,
+        branches: BranchRepository,
+        branchNotes: BranchNoteRepository,
+        branchCoordinator: BranchSessionCoordinator,
+        branchMergeService: BranchMergeService
     ) {
         self.database = database
         self.supervisor = supervisor
         self.client = client
         self.sessionStore = sessionStore
         self.conversationStore = conversationStore
+        self.threads = threads
+        self.messages = messages
+        self.branches = branches
+        self.branchNotes = branchNotes
+        self.branchCoordinator = branchCoordinator
+        self.branchMergeService = branchMergeService
     }
 
     /// 生产装配：文件库（Application Support）+ 真实 CLI。
@@ -51,18 +74,43 @@ public final class AppEnvironment: @unchecked Sendable {
         let client = ACPClient(supervisor: supervisor)
         let sessionStore = SessionStore(mappingStore: threads)
         let driver = LiveConversationDriver(client: client, sessionStore: sessionStore)
+        let messages = MessageRepository(database)
         let conversationStore = ConversationStore(
             threads: threads,
-            messages: MessageRepository(database),
+            messages: messages,
             driver: driver
         )
-        return AppEnvironment(
+        // 支线服务（B-M3）：摘要器用惰性工厂——重连后旧 ACPClient 绑死管道失效，
+        // 故每次摘要时按当前 client + 当前活跃线程 projectRoot 现构 ACPSummarizer，
+        // 不在装配期绑死实例（environment 引用在下方回填）。
+        let branches = BranchRepository(database)
+        let branchNotes = BranchNoteRepository(database)
+        let summarizer = LazyBranchSummarizer()
+        let assembler = BranchContextAssembler(
+            messages: messages, branches: branches, notes: branchNotes, summarizer: summarizer
+        )
+        let branchCoordinator = BranchSessionCoordinator(
+            assembler: assembler, branches: branches, conversation: conversationStore
+        )
+        let branchMergeService = BranchMergeService(
+            branches: branches, notes: branchNotes, messages: messages,
+            summarizer: summarizer, conversation: conversationStore
+        )
+        let environment = AppEnvironment(
             database: database,
             supervisor: supervisor,
             client: client,
             sessionStore: sessionStore,
-            conversationStore: conversationStore
+            conversationStore: conversationStore,
+            threads: threads,
+            messages: messages,
+            branches: branches,
+            branchNotes: branchNotes,
+            branchCoordinator: branchCoordinator,
+            branchMergeService: branchMergeService
         )
+        summarizer.environment = environment
+        return environment
     }
 
     /// 启动编排：事件路由挂载 → 重建 session 映射 → 环境检测 + 拉起子进程 + ACP 握手。
@@ -92,5 +140,30 @@ public final class AppEnvironment: @unchecked Sendable {
     /// 优雅停止：断协议层 + 关 stdin 停子进程（G0 实测语义）。
     public func shutdown() async {
         await client.disconnect()
+    }
+}
+
+/// 惰性支线摘要器（B-M3 装配缝）：``BranchContextAssembler`` 与 ``BranchMergeService``
+/// 都需要 ``BranchSummarizer``，但 ``ACPSummarizer`` 绑定的 ACPClient 在重连后失效
+/// （旧实例管道已死）。本类把「取当前 client」推迟到每次摘要调用时，
+/// 按 ``AppEnvironment/client`` 现构 ACPSummarizer；cwd 取当前活跃线程的 projectRoot
+/// （查不到时回退进程工作目录），与 DEC-06 临时独立 session 语义一致。
+final class LazyBranchSummarizer: BranchSummarizer, @unchecked Sendable {
+
+    /// 装配完成后由 ``AppEnvironment/make(logger:)`` 回填（weak 避免循环持有）。
+    weak var environment: AppEnvironment?
+
+    func summarize(background: String) async throws -> String {
+        guard let environment else {
+            throw BranchSummarizeError.agentFailed(reason: "摘要器装配未完成")
+        }
+        let threadID = await environment.conversationStore.currentSnapshot().threadID
+        let cwd = threadID
+            .flatMap { id in try? environment.threads.listThreads().first(where: { $0.id == id }) }?
+            .projectRoot ?? FileManager.default.currentDirectoryPath
+        let summarizer = ACPSummarizer(
+            client: environment.client, sessionStore: environment.sessionStore, cwd: cwd
+        )
+        return try await summarizer.summarize(background: background)
     }
 }

@@ -12,7 +12,7 @@
 - 排坑与可复用知识记 `doc/工程笔记.md`，不写进本文件；
 - 本文件是唯一执行面，每个任务只需动这里。
 
-**▶ 当前进度**：**Gate G2 已通过**（B-M2 收官，2026-08-01）：DEC-08 拍板（ADR-002：Highlightr + swift-markdown 自渲染）→ Markdown 块级渲染 + 代码高亮（超限熔断）+ 全块可选中 → SEC 全量与真实 CLI 精简验收，110 测试全绿，证据见 `doc/G2-验收报告.md`——下一项 `25. M3-001` NSTextView 选区监听（B-M3 支线开工；DEC-07 锚点字段决策须在任务 26 前关闭）
+**▶ 当前进度**：**Gate G3 已通过**（B-M3 收官，2026-08-02）：DEC-05/06/07 全部关闭（ADR-003 锚点坐标 + migration v2；压缩阈值 32_000 字符；临时独立摘要 session）→ 选区监听/追问入口/右侧标签栏/三级嵌套/引文回跳/回流幂等全落地，BR-01~18 逐条有证据（fake 全量 + 真实 CLI 4 轮约 14 次最小化 prompt），199 测试全绿，证据见 `doc/G3-验收报告.md`——下一项 `39. M4-001` 树查询与环/孤儿保护（B-M4 开工；DEC-09 同级排序须在任务 44 前关闭、DEC-10 须在任务 45 前关闭）
 
 ---
 
@@ -32,7 +32,7 @@
 - [x] 04. **M1-004** ACP 完整链路事件采样 ｜ 依赖：M1-002/003 ｜ 输出：脱敏事件样本（供测试替身）
   - 完成：9 类事件样本在 `spike/samples/sanitized/`（写/终端 permission 拒绝生效且文件未落盘；stdin 关闭 exit 0，SIGTERM 被忽略）
 - [x] 05. **M1-005** 长背景新 session 播种验证 ｜ 依赖：M1-004 ｜ 输出：测试结论 + `TBD_CONTEXT_COMPRESSION_THRESHOLD`
-  - 完成：4KB/32KB/128KB 三档全部 end_turn 无截断，session 历史隔离，无 usage 上报；DEC-05 定稿留 B-M3（任务 29）
+  - 完成：4KB/32KB/128KB 三档全部 end_turn 无截断，session 历史隔离，无 usage 上报；DEC-05 已于任务 29 定稿 32_000 字符
 
 ### Gate G0 退出门槛 ✅ 已通过（2026-07-31）
 - [x] 已选定实现路径（ADR-001：rebornix/acp-swift-sdk；第一回退＝手写 NDJSON transport）
@@ -97,7 +97,7 @@
 - [x] 22. **M2-008** 代码块高亮与回退（超长块不做一次性昂贵高亮）｜ 依赖：M2-007 ｜ 输出：富文本渲染
   - 完成：`CodeHighlighter`（Highlightr 封装，串行队列收敛 JavaScriptCore 调用 + NSCache 缓存 + 超 10_000 字符熔断走等宽纯文本 + 未知语言/失败回退）+ CodeBlockView（语言小标/横向滚动/可选中）
 - [x] 23. **M2-009** 工具结果文本可选中（代码块/引用/列表/段落均保留选区能力；AppKit 选区层不与渲染层互覆）｜ 依赖：M2-002/008 ｜ 输出：B-M3 前置能力
-  - 完成：全部块级视图与 ToolCallCard 结果区 `.textSelection(.enabled)`；NSTextView 选区层未落地（归 M3-001），互覆检查随 M3-001 执行
+  - 完成：全部块级视图与 ToolCallCard 结果区 `.textSelection(.enabled)`；NSTextView 选区层随 M3-001 落地（assistant 稳定态与工具结果改走 SelectableMessageText），互覆未见冲突（GUI 冒烟随 G3）
 - [x] 24. **M2-010** SEC 全量测试 ｜ 依赖：M2-003~009 ｜ 输出：G2 证据
   - 完成：缺口补齐（SEC-11 并发权限 fake agent 端到端 + 未知调用不绕过策略器 + 拒绝不死锁断言；SEC-01~03 放行面引用分类器/策略器单测与 fsrpc 样本）+ 真实 CLI 精简用例 `writeDeniedRealCLI`（写拒绝/文件未落盘/notice 入库/对话续行，TWIG_REAL_CLI=1 实测通过）→ `doc/G2-验收报告.md`（SEC-01~14 逐条证据 + §6.7 六条附加项）
 
@@ -124,30 +124,44 @@
 
 > 阶段目标：选中原文 → 追问 → 组装背景 → 独立 ACP session → 支线流式 → 可嵌套 → 可回流。
 
-- [ ] 25. **M3-001** NSTextView 选区监听（AI 文本与工具结果；忽略空/纯空白/跨区域选区；点击即冻结 selection snapshot）｜ 依赖：M2-008/009 ｜ 输出：selection snapshot
-- [ ] ⬦ DEC-07：锚点是否增加 `anchor_start`/`anchor_length`/`anchor_context_hash`（不加则须定义重复引文定位降级规则）→ ADR-003 + 可能的 migration（B-M3 前关闭）
-- [ ] 26. **M3-002** 锚点数据方案定稿 ｜ 依赖：M3-001 ｜ 输出：锚点字段/降级规则
-- [ ] 27. **M3-003** 「追问」浮动入口与问题编辑界面 ｜ 依赖：M3-001 ｜ 输出：支线创建入口
-- [ ] 28. **M3-004** BranchContextAssembler（锚点消息+主线问答+祖先链；§7.4 播种模板：背景/选中段落/追问三段可识别）｜ 依赖：M1-005/M3-002 ｜ 输出：seed_context
-- [ ] ⬦ DEC-05 定稿：压缩阈值（基于任务 05 实测）；⬦ DEC-06：摘要用临时独立 session 还是现有 session → ADR 或实现说明（B-M3 前关闭）
-- [ ] 29. **M3-005** 长历史摘要流程（只压背景不改锚点与问题；摘要失败不静默截断；记录摘要与原始范围）｜ 依赖：M3-004 ｜ 输出：压缩路径
-- [ ] 30. **M3-006** 支线 session 创建状态机（§7.3：防重复创建、取消不耗额度、失败可重试、后台任务有主）｜ 依赖：M1-010/M3-004 ｜ 输出：独立 session
-- [ ] 31. **M3-007** 右侧支线标签栏（标签页/锚点引文/状态/合并按钮/10 轮提示入口）｜ 依赖：M3-006 ｜ 输出：支线 UI
-- [ ] 32. **M3-008** 支线多轮对话与事件路由（多支线并发流式不串线；关闭标签不删支线）｜ 依赖：M3-006/007 ｜ 输出：独立历史
-- [ ] 33. **M3-009** 嵌套支线与祖先链（parent_branch_id；祖先链根→叶排序；关父不毁子；最低验收深度三级）｜ 依赖：M3-004/008 ｜ 输出：多级关系
-- [ ] 34. **M3-010** 锚点引文回跳（点击引文主对话滚动+短暂高亮；失配降级到所属消息）｜ 依赖：M3-002/007 ｜ 输出：滚动高亮
-- [ ] 35. **M3-011** BranchMergeService（CLI 压缩结论 → branch_notes → 主线注入带来源消息 → status=merged）｜ 依赖：M3-005/008 ｜ 输出：回流笔记
-- [ ] 36. **M3-012** 回流幂等与事务（笔记+注入+状态同一事务；重复点击不重复；注入失败显示可恢复中间态）｜ 依赖：M3-011 ｜ 输出：一致性保证
-- [ ] 37. **M3-013** 超 10 轮「合并并关闭」提示与 open/merged/closed 状态管理 ｜ 依赖：M3-007/008 ｜ 输出：长度管控
-- [ ] 38. **M3-014** BR 全量测试 ｜ 依赖：全部 ｜ 输出：G3 证据
+- [x] 25. **M3-001** NSTextView 选区监听（AI 文本与工具结果；忽略空/纯空白/跨区域选区；点击即冻结 selection snapshot）｜ 依赖：M2-008/009 ｜ 输出：selection snapshot
+  - 完成：`SelectableMessageText`（只读 NSTextView 包装，空/纯空白选区过滤为可测静态口）+ `MarkdownAttributedRenderer`（MarkdownBlock→NSAttributedString，行内意图自行加 trait，SDK 不解析见工程笔记）+ `SelectionSnapshot`（渲染纯文本 UTF-16 偏移）+ MainChat assistant 稳定态与 ToolCallCard 结果区接线，14 测试
+- [x] ⬦ DEC-07：锚点增加 `anchor_start`/`anchor_length`/`anchor_context_hash`（2026-08-02 拍板加字段；坐标语义＝渲染后纯文本 Character 偏移，三级降级规则：坐标切片→hash 搜索→降级消息）→ **ADR-003 已定稿**：`adr/ADR-003-anchor-fields.md` + migration v2（ALTER TABLE 三列 nullable，不重建表不加 FK）
+- [x] 26. **M3-002** 锚点数据方案定稿 ｜ 依赖：M3-001 ｜ 输出：锚点字段/降级规则
+  - 完成：migration v2 + Branch 模型三字段 + `AnchorResolver`（exact/degradedToMessage，ambiguous 标记）+ UTF-16↔Character 换算口径锁定 ADR-003，11 测试
+- [x] 27. **M3-003** 「追问」浮动入口与问题编辑界面 ｜ 依赖：M3-001 ｜ 输出：支线创建入口
+  - 完成：右下角浮动胶囊（贴选区 firstRect 列工程候选，见 MainChatView 注释）+ 引文预览编辑面板；点击即冻结 snapshot（BR-04）、取消零请求零额度
+- [x] 28. **M3-004** BranchContextAssembler（锚点消息+主线问答+祖先链；§7.4 播种模板：背景/选中段落/追问三段可识别）｜ 依赖：M1-005/M3-002 ｜ 输出：seed_context
+  - 完成：§7.4 五段模板 + 主线问答收集（锚点前 user/assistant text）+ 祖先链根→叶（引文/已回流笔记/首尾问答）+ 长度估算，独立于 UI 与 session 创建，9 测试
+- [x] ⬦ DEC-05 定稿（2026-08-02）：压缩阈值 **32_000 字符**（G0 实测 128KB 无截断，取显著低一档）；⬦ DEC-06（2026-08-02）：摘要采用**临时独立 ACP session**（`ACPSummarizer`，用完即摘映射不污染历史）→ 实现说明记于 `BranchContextAssembler.swift` 头注（附录 A 允许「ADR 或实现说明」）
+- [x] 29. **M3-005** 长历史摘要流程（只压背景不改锚点与问题；摘要失败不静默截断；记录摘要与原始范围）｜ 依赖：M3-004 ｜ 输出：压缩路径
+  - 完成：超阈值仅背景入摘要（BR-10 真实 CLI 实测 quote/追问原文未改写）；失败抛 `summarizationFailed` 零截断产物（BR-11）；`summaryNote` 记录摘要与原始范围
+- [x] 30. **M3-006** 支线 session 创建状态机（§7.3：防重复创建、取消不耗额度、失败可重试、后台任务有主）｜ 依赖：M1-010/M3-004 ｜ 输出：独立 session
+  - 完成：`BranchSessionCoordinator` 八态 + failed(retryable)；BR-06 dedupeKey 去重、取消在发 prompt 前复查零额度、BR-07 显式重试不自动重发、编排 Task 全登记；组装成功才建行 + `AnchorCoordinates` UTF-16→Character 换算，11 测试
+- [x] 31. **M3-007** 右侧支线标签栏（标签页/锚点引文/状态/合并按钮/10 轮提示入口）｜ 依赖：M3-006 ｜ 输出：支线 UI
+  - 完成：`BranchPanelView`+`BranchPanelViewModel`（标签页/状态徽标/锚点引文按钮/合并区五态含 savedNotInjected 中间态/seed 折叠「背景已注入」/pending 进度区；新建自动切标签）
+- [x] 32. **M3-008** 支线多轮对话与事件路由（多支线并发流式不串线；关闭标签不删支线）｜ 依赖：M3-006/007 ｜ 输出：独立历史
+  - 完成：ConversationStore 泛化 `ConversationKey(threadID,branchID?)`（主线 API 零改动）+ 支线 API（openBranch/sendBranchMessage/branchSnapshots/retryBranch/interruptBranch）；关标签仅 UI 隐藏上下文常驻；BR-17 主线+两支线交错不串线
+- [x] 33. **M3-009** 嵌套支线与祖先链（parent_branch_id；祖先链根→叶排序；关父不毁子；最低验收深度三级）｜ 依赖：M3-004/008 ｜ 输出：多级关系
+  - 完成：支线内消息同样可选中追问（parentBranchID=当前支线）；fake 三级链 + 真实 CLI 两级验证（seedContext 含 [祖先支线] 段与父级引文）；关父不毁子天然满足（上下文常驻）
+- [x] 34. **M3-010** 锚点引文回跳（点击引文主对话滚动+短暂高亮；失配降级到所属消息）｜ 依赖：M3-002/007 ｜ 输出：滚动高亮
+  - 完成：AnchorResolver 解析 → ScrollViewReader 滚动 + 整消息高亮 1.2s 渐隐（exact 范围高亮留 stretch 口）；失配降级所属消息；嵌套锚点降级切父标签+滚动
+- [x] 35. **M3-011** BranchMergeService（CLI 压缩结论 → branch_notes → 主线注入带来源消息 → status=merged）｜ 依赖：M3-005/008 ｜ 输出：回流笔记
+  - 完成：收集支线对话（seed/notice/toolCall 跳过）→ 摘要（复用 DEC-06 缝）→ 四行注入消息（[支线回流笔记] 来源/锚点/结论，kind=notice+metadata 标记）→ merged；ConversationStore 增量 `injectContextToMainThread`（无占位注入）
+- [x] 36. **M3-012** 回流幂等与事务（笔记+注入+状态同一事务；重复点击不重复；注入失败显示可恢复中间态）｜ 依赖：M3-011 ｜ 输出：一致性保证
+  - 完成：`recordMerge` 单事务 + merge_note_id 幂等（BR-14 `.alreadyMerged` 零写入）；注入失败 metadata `injectedToACP=false` 中间态 + `retryInjection` 恢复（真实 CLI 主线空闲注入实测成功）
+- [x] 37. **M3-013** 超 10 轮「合并并关闭」提示与 open/merged/closed 状态管理 ｜ 依赖：M3-007/008 ｜ 输出：长度管控
+  - 完成：roundCount>10 banner + 「合并并关闭」（merge→updateStatus(.closed)，中间态也允许关）+ 忽略（内存标记）
+- [x] 38. **M3-014** BR 全量测试 ｜ 依赖：全部 ｜ 输出：G3 证据
+  - 完成：fake 层补洞 10 测试（BRMatrixTests：入口两路/空白过滤/历史隔离/三级嵌套/回跳集成/文件库重启/面板一致性）+ 真实 CLI 两例（`branchLifecycleRealCLI` BR-05/08/09/13/14、`summaryPathRealCLI` BR-10；4 轮约 14 次最小化 prompt，用户批准）→ `doc/G3-验收报告.md`，199 全绿
 
-### Gate G3 测试矩阵（§7.9）
-- [ ] BR-01 选中 AI 文本 → 追问入口 ｜ BR-02 选中工具结果 → 追问入口 ｜ BR-03 纯空白 → 无入口 ｜ BR-04 旧入口不用过期锚点
-- [ ] BR-05 一级支线 → 新 session 独立历史 ｜ BR-06 双击不重复创建 ｜ BR-07 session 失败可重试 ｜ BR-08 支线追问历史独立
-- [ ] BR-09 三级嵌套正确 ｜ BR-10 超阈值先摘要、锚点不改写 ｜ BR-11 摘要失败可恢复 ｜ BR-12 引文回跳高亮
-- [ ] BR-13 合并生成带来源笔记 ｜ BR-14 重复合并不重复 ｜ BR-15 合并后历史仍在、状态 merged ｜ BR-16 超 10 轮提示
-- [ ] BR-17 多支线并发不串线 ｜ BR-18 重启后支线树/锚点/回流状态仍在
-- [ ] G3 附加：主线与工具结果均可开支线；回流幂等；标签/锚点/状态与数据库一致
+### Gate G3 测试矩阵（§7.9）✅ 已通过（2026-08-02，证据见 `doc/G3-验收报告.md`）
+- [x] BR-01 选中 AI 文本 → 追问入口 ｜ BR-02 选中工具结果 → 追问入口 ｜ BR-03 纯空白 → 无入口 ｜ BR-04 旧入口不用过期锚点
+- [x] BR-05 一级支线 → 新 session 独立历史 ｜ BR-06 双击不重复创建 ｜ BR-07 session 失败可重试 ｜ BR-08 支线追问历史独立
+- [x] BR-09 三级嵌套正确 ｜ BR-10 超阈值先摘要、锚点不改写 ｜ BR-11 摘要失败可恢复 ｜ BR-12 引文回跳高亮
+- [x] BR-13 合并生成带来源笔记 ｜ BR-14 重复合并不重复 ｜ BR-15 合并后历史仍在、状态 merged ｜ BR-16 超 10 轮提示
+- [x] BR-17 多支线并发不串线 ｜ BR-18 重启后支线树/锚点/回流状态仍在
+- [x] G3 附加：主线与工具结果均可开支线；回流幂等；标签/锚点/状态与数据库一致
 
 ---
 
@@ -199,9 +213,9 @@
 | DEC-02 | Rust FFI 最小边界 | 任务 03 触发时 | ADR-001 附录 |
 | DEC-03 | 通过验证的 CLI/ACP 版本 | ✅ 已关闭 | 兼容矩阵 |
 | DEC-04 | session 是否支持恢复 | ✅ 已关闭 | 恢复策略 |
-| DEC-05 | 长背景压缩阈值 | 任务 29 定稿 | ADR/实现说明 |
-| DEC-06 | 摘要 session 策略 | 任务 29 前 | ADR/实现说明 |
-| DEC-07 | 锚点 start/length/hash | 任务 26 前 | ADR-003 + migration |
+| DEC-05 | 长背景压缩阈值 | ✅ 已关闭（32_000 字符） | 实现说明（Assembler 头注） |
+| DEC-06 | 摘要 session 策略 | ✅ 已关闭（临时独立 session） | 实现说明（ACPSummarizer） |
+| DEC-07 | 锚点 start/length/hash | ✅ 已关闭 | ADR-003 + migration v2 |
 | DEC-08 | Markdown/高亮库 | ✅ 已关闭 | ADR-002 |
 | DEC-09 | 树同级排序 | 任务 44 前 | **免 ADR**，TODO 备注记录 |
 | DEC-10 | 多主线程操作集合 | 任务 45 前 | **免 ADR**，TODO 备注记录 |
