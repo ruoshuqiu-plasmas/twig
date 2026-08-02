@@ -169,7 +169,18 @@ struct ConversationTreeViewModelTests {
         #expect(world.tree.selectedBranchID == "b1")
     }
 
-    @Test("面板 openFromTree：closed 支线强制可见且不改 status（TREE-04）")
+    @Test("面板未启动（threadID 未知）时 openFromTree 也能打开：按支线所属线程补位")
+    func panelOpenFromTreeBeforeStart() throws {
+        let world = try makeWorld()
+        try world.branches.create(id: "b1", threadID: "t1", anchorQuote: "引文", at: t0)
+        // 不调 panel.start()、不写 threadID：模拟重启后右栏尚未出现的窗口期。
+
+        world.panel.openFromTree(branchID: "b1")
+
+        #expect(world.panel.threadID == "t1")
+        #expect(world.panel.visibleBranches.map(\.id) == ["b1"])
+        #expect(world.panel.activeBranchID == "b1")
+    }
     func panelOpenFromTree() throws {
         let world = try makeWorld()
         try world.branches.create(id: "b1", threadID: "t1", anchorQuote: "引文", at: t0)
