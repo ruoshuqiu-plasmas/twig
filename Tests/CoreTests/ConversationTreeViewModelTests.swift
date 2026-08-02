@@ -201,6 +201,25 @@ struct ConversationTreeViewModelTests {
         #expect(world.panel.visibleBranches.isEmpty)
     }
 
+    @Test("关闭标签 → 树点击重新打开（BR-15：关闭仅 UI 隐藏，openFromTree 解除）")
+    func closeTabThenReopenFromTree() throws {
+        let world = try makeWorld()
+        try world.branches.create(id: "b1", threadID: "t1", anchorQuote: "引文", at: t0)
+        world.panel.threadID = "t1"
+        world.panel.refresh()
+        #expect(world.panel.visibleBranches.map(\.id) == ["b1"])
+
+        // 关闭标签：仅隐藏，支线数据不动。
+        world.panel.closeTab(branchID: "b1")
+        #expect(world.panel.visibleBranches.isEmpty)
+        #expect(try world.branches.branch(id: "b1")?.status == .open)
+
+        // 树点击 = 重新打开入口。
+        world.panel.openFromTree(branchID: "b1")
+        #expect(world.panel.visibleBranches.map(\.id) == ["b1"])
+        #expect(world.panel.activeBranchID == "b1")
+    }
+
     @Test("DEC-09 数据前提：支线消息落库触碰 updated_at，刷新后轮数与排序更新")
     func messageInsertTouchesBranchActivity() throws {
         let world = try makeWorld()
