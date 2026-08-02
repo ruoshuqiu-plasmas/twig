@@ -410,6 +410,25 @@ public actor ConversationStore {
         }
     }
 
+    // MARK: - 回流注入（M3-011）
+
+    /// 向指定线程的主线 session 注入背景补充文本（BranchMergeService 回流用，§7.8 步骤 5）。
+    /// 与 ``send(text:)`` 的本质区别：注入是背景补充而非用户发言——
+    /// **不落库 user 消息、不产生 assistant 占位**（回流笔记已由 recordMerge 落库）。
+    /// agent 若仍回应，其 delta 因无流式占位被 ``appendDelta`` 保守记录并丢弃，
+    /// 属可接受行为（注入文本已显式要求「无需回复」）。
+    /// 不改变主线 phase；主线正在流式时发送失败原样抛出（调用方按中间态处理，可重试）。
+    /// 主线上下文未打开（线程从未激活）时抛 ``ConversationStoreError/threadNotOpen(_:)``。
+    public func injectContextToMainThread(threadID: String, text: String) async throws {
+        let key = ConversationKey(threadID: threadID)
+        guard let ctx = contexts[key] else {
+            throw ConversationStoreError.threadNotOpen(threadID)
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try await driver.sendPrompt(sessionID: ctx.sessionID, text: trimmed)
+    }
+
     /// 中断主线指定线程的流式（M1-013 进程级路径与事件流终止均经此收口）。
     public func interrupt(threadID: String) {
         interrupt(key: ConversationKey(threadID: threadID))
@@ -723,4 +742,6 @@ public enum ConversationStoreError: Error, Sendable, Equatable {
     case noActiveThread
     /// 支线上下文未打开（须先 openBranch）。
     case branchNotOpen(String)
+    /// 主线上下文未打开（线程从未激活；回流注入前置条件）。
+    case threadNotOpen(String)
 }
