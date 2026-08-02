@@ -4,8 +4,8 @@ import Shared
 
 /// 主对话界面（任务 M1-012）：消息列表 + 流式渲染 + 输入区。
 ///
-/// B-M1 渲染从简：纯文本 + `.textSelection(.enabled)`；
-/// Markdown/高亮归 M2-007/008，NSTextView 选区归 B-M3。
+/// B-M3 起追加：选中文字后的「追问」浮动入口与问题编辑面板（M3-003）、
+/// 引文回跳的滚动与高亮（M3-010）。消息行渲染抽为模块内共享的 ``MessageRow``（M3-007 复用）。
 public struct MainChatView: View {
 
     @State private var viewModel: MainChatViewModel
@@ -21,6 +21,10 @@ public struct MainChatView: View {
                 errorBar(banner)
             }
             messageList
+            if viewModel.isComposingBranchQuestion {
+                Divider()
+                branchComposePanel
+            }
             Divider()
             inputArea
         }
@@ -43,12 +47,40 @@ public struct MainChatView: View {
                         MessageRow(
                             message: message,
                             onRetry: { viewModel.retry() },
-                            onSelectionChange: { viewModel.currentSelection = $0 }
+                            onSelectionChange: { viewModel.currentSelection = $0 },
+                            isHighlighted: viewModel.highlightedMessageID == message.id
                         )
                         .id(message.id)
                     }
                 }
                 .padding()
+            }
+            // 追问浮动入口（M3-003）取舍：贴在选区附近需要从 SelectableMessageText
+            // 透出 firstRect 回调并换算 SwiftUI 坐标，改动跨 Shared 组件且要处理滚动跟随，
+            // 成本偏高；择简为固定在对话区右下角的浮动胶囊按钮。
+            // （候选改进：firstRect 贴选区浮动——记工程笔记候选，G3 后再评估。）
+            .overlay(alignment: .bottomTrailing) {
+                if viewModel.currentSelection != nil && !viewModel.isComposingBranchQuestion {
+                    Button {
+                        viewModel.beginBranchComposition()
+                    } label: {
+                        Label("追问", systemImage: "text.bubble")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Capsule())
+                    .shadow(radius: 4)
+                    .padding(16)
+                }
+            }
+            .onChange(of: viewModel.anchorJump) { _, jump in
+                // 引文回跳（M3-010）：滚动到锚点消息；高亮由 highlightedMessageID 驱动。
+                if let jump {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(jump.messageID, anchor: .center)
+                    }
+                }
             }
             .onChange(of: viewModel.messages.last?.content) { _, _ in
                 if let last = viewModel.messages.last {
@@ -63,6 +95,35 @@ public struct MainChatView: View {
                 }
             }
         }
+    }
+
+    // MARK: - 追问编辑面板（M3-003）
+
+    /// 引文预览 + 多行输入 + 确认/取消。确认后请求交支线面板编排，本面板即关闭。
+    private var branchComposePanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let quote = viewModel.frozenSelection?.quote {
+                Text(quote)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+            TextEditor(text: $viewModel.branchQuestionInput)
+                .font(.body)
+                .frame(minHeight: 48, maxHeight: 100)
+            HStack {
+                Spacer()
+                Button("取消") { viewModel.cancelBranchComposition() }
+                Button("创建支线") { viewModel.confirmBranchQuestion() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(viewModel.branchQuestionInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(12)
+        .background(.bar)
     }
 
     // MARK: - 输入区
@@ -92,114 +153,5 @@ public struct MainChatView: View {
         }
         .padding(8)
         .background(.yellow.opacity(0.15))
-    }
-}
-
-/// 单条消息行：user 右对齐着色 / assistant 左对齐；流式光标；终态徽标与重试。
-private struct MessageRow: View {
-
-    let message: Message
-    let onRetry: () -> Void
-    /// 选区变化回调（M3-001）：assistant 稳定态正文与工具结果区的选区快照。
-    let onSelectionChange: (SelectionSnapshot?) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if message.kind != .notice {
-                Text(roleTitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            content
-            statusBadge
-        }
-    }
-
-    /// 工具调用渲染为折叠卡片（M2-002）；metadata 解码失败回退纯文本，不崩溃。
-    /// 权限拒绝 notice（M2-006）渲染为居中警示小字，不走气泡。
-    @ViewBuilder
-    private var content: some View {
-        if message.kind == .toolCall, let record = message.toolCallRecord() {
-            ToolCallCard(
-                title: record.title ?? "工具调用",
-                status: record.status.rawValue,
-                kind: record.kind,
-                paths: record.paths ?? [],
-                content: record.contentText ?? message.content,
-                messageID: message.id,
-                onSelectionChange: onSelectionChange
-            )
-        } else if message.kind == .notice {
-            Label(message.content, systemImage: "exclamationmark.shield")
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .frame(maxWidth: .infinity, alignment: .center)
-        } else {
-            bodyContent
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
-                .background(background, in: RoundedRectangle(cornerRadius: 8))
-        }
-    }
-
-    /// 消息正文（M2-007/M3-001）：assistant 稳定态走 Markdown → NSAttributedString →
-    /// 只读 NSTextView（``SelectableMessageText``，可回报选区快照）；
-    /// 流式中与 user 消息保持纯文本 `.textSelection`（流式先保可见，§6.5 第 1 条），
-    /// 两套选择系统相互独立、不会互覆。
-    @ViewBuilder
-    private var bodyContent: some View {
-        if message.role == .assistant && message.status != .streaming {
-            SelectableMessageText(
-                messageID: message.id,
-                attributedText: MarkdownAttributedRenderer.render(MarkdownBlockParser.parse(message.content)),
-                onSelectionChange: onSelectionChange
-            )
-        } else {
-            Text(displayContent)
-                .textSelection(.enabled)
-        }
-    }
-
-    private var roleTitle: String {
-        switch message.role {
-        case .user: return "我"
-        case .assistant: return "Kimi"
-        case .system: return "系统"
-        }
-    }
-
-    /// 流式中追加光标；空占位显示「正在生成…」。
-    private var displayContent: String {
-        if message.status == .streaming {
-            return message.content.isEmpty ? "正在生成…" : message.content + " ▍"
-        }
-        return message.content
-    }
-
-    private var background: some ShapeStyle {
-        switch message.role {
-        case .user: return AnyShapeStyle(.blue.opacity(0.12))
-        default: return AnyShapeStyle(.gray.opacity(0.08))
-        }
-    }
-
-    @ViewBuilder
-    private var statusBadge: some View {
-        switch message.status {
-        case .interrupted:
-            Label("已中断（内容不完整）", systemImage: "stop.circle")
-                .font(.caption)
-                .foregroundStyle(.orange)
-        case .failed:
-            HStack(spacing: 8) {
-                Label("生成失败", systemImage: "xmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                Button("重试", action: onRetry)
-                    .font(.caption)
-            }
-        case .streaming, .completed:
-            EmptyView()
-        }
     }
 }
