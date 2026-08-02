@@ -24,6 +24,10 @@ struct BranchSessionCoordinatorTests {
         var sentPromptCount: Int { sentPrompts.count }
         func sessionID(at index: Int) -> String { sessions[index].sessionID }
         func sessionOwner(at index: Int) -> SessionStore.Owner { sessions[index].owner }
+        /// 发往指定 session 的 prompt 文本（按发送顺序；BR-05/08 隔离断言用）。
+        func prompts(for sessionID: String) -> [String] {
+            sentPrompts.filter { $0.sessionID == sessionID }.map(\.text)
+        }
         func failNextSession(_ error: any Error) { sessionError = error }
 
         func makeSession(cwd: String, owner: SessionStore.Owner) async throws -> String {

@@ -52,6 +52,17 @@ public struct SelectableMessageText: NSViewRepresentable {
         Coordinator(messageID: messageID, onSelectionChange: onSelectionChange)
     }
 
+    /// 选区内容 → 快照（BR-03 空白过滤的唯一实现，供 Coordinator 与测试共用）：
+    /// 空/纯空白（含空格、换行、制表符等混合空白）→ nil；含非空白字符 → snapshot。
+    static func makeSnapshot(
+        messageID: String, quote: String, start: Int, length: Int
+    ) -> SelectionSnapshot? {
+        guard length > 0, !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return SelectionSnapshot(messageID: messageID, quote: quote, start: start, length: length)
+    }
+
     public func makeNSView(context: Context) -> NSTextView {
         let textView = NSTextView()
         textView.isEditable = false
@@ -107,16 +118,10 @@ public struct SelectableMessageText: NSViewRepresentable {
                 return
             }
             let quote = nsString.substring(with: range)
-            // 过滤纯空白选区（空选区已被上方 length > 0 拦截）。
-            guard !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                onSelectionChange(nil)
-                return
-            }
-            onSelectionChange(SelectionSnapshot(
-                messageID: messageID,
-                quote: quote,
-                start: range.location,
-                length: range.length
+            // 过滤纯空白选区（空选区已被上方 length > 0 拦截；逻辑单一实现见 makeSnapshot）。
+            onSelectionChange(SelectableMessageText.makeSnapshot(
+                messageID: messageID, quote: quote,
+                start: range.location, length: range.length
             ))
         }
     }
